@@ -26,7 +26,23 @@
     <div id="info">
         Speed: <span id="speed">0</span> km/h<br>
         Altitude: <span id="altitude">0</span> m<br>
+        Health: <span id="health">100</span>/100<br>
+        Kills: <span id="kills">0</span> | Deaths: <span id="deaths">0</span><br>
         Players: <span id="players-count">1</span>
+    </div>
+    <div id="health-bar" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: 300px; height: 30px; background-color: rgba(0,0,0,0.7); border: 2px solid white; border-radius: 5px; overflow: hidden;">
+        <div id="health-bar-fill" style="width: 100%; height: 100%; background: linear-gradient(to right, #ff0000, #00ff00); transition: width 0.3s;"></div>
+    </div>
+    <div id="rearview-container" style="position: absolute; top: 10px; right: 10px; width: 200px; height: 150px; border: 2px solid white; background-color: rgba(0,0,0,0.5); border-radius: 5px; overflow: hidden;">
+        <div style="position: absolute; top: 5px; left: 5px; color: white; font-family: monospace; font-size: 12px;">REAR VIEW</div>
+    </div>
+    <div id="respawn-message" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 48px; font-family: monospace; font-weight: bold; text-align: center; display: none; text-shadow: 2px 2px 4px rgba(0,0,0,0.8);">
+        YOU DIED<br><span style="font-size: 24px;">Respawning...</span>
+    </div>
+    <div id="kill-notification" style="position: absolute; top: 100px; left: 50%; transform: translateX(-50%); color: #ffff00; font-size: 32px; font-family: monospace; font-weight: bold; display: none; text-shadow: 2px 2px 4px rgba(0,0,0,0.8);"></div>
+    <div id="crosshair" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 20px; height: 20px; pointer-events: none;">
+        <div style="position: absolute; top: 50%; left: 0; width: 100%; height: 2px; background-color: rgba(255,255,255,0.8); transform: translateY(-50%);"></div>
+        <div style="position: absolute; left: 50%; top: 0; height: 100%; width: 2px; background-color: rgba(255,255,255,0.8); transform: translateX(-50%);"></div>
     </div>
     <script type="importmap">
         {
@@ -93,7 +109,7 @@
         let scene, camera, renderer, clock, skyLight, sunLight;
         let playerAircraft = null; // Initialize as null
         let playerVelocity, playerAngularVelocity;
-        let controls = { forward: 0, backward: 0, left: 0, right: 0, up: 0, down: 0, boost: 0 };
+        let controls = { forward: 0, backward: 0, left: 0, right: 0, up: 0, down: 0, boost: 0, shoot: 0 };
         let ws;
         let playerId = null;
         let otherPlayers = new Map(); // Map<playerId, { mesh: THREE.Mesh, lastUpdate: number }>
@@ -106,6 +122,23 @@
         let loadingIndicator = null;    // Simple DOM element for loading message
         let clouds = null;              // Hold the Points object for animation
         let roadTexture = null;         // To store the loaded road texture
+
+        // --- Combat System Variables ---
+        let projectiles = [];           // Array of active projectiles
+        let playerHealth = 100;         // Player health (0-100)
+        let playerMaxHealth = 100;
+        let playerAmmo = Infinity;      // Infinite ammo for now
+        let playerKills = 0;
+        let playerDeaths = 0;
+        let lastShootTime = 0;
+        const SHOOT_COOLDOWN = 200;     // Milliseconds between shots
+        const PROJECTILE_SPEED = 800;   // Units per second
+        const PROJECTILE_DAMAGE = 20;   // Damage per hit
+        const PROJECTILE_LIFETIME = 3000; // Milliseconds before projectile despawns
+        const RESPAWN_TIME = 3000;      // Milliseconds before respawn
+        let isRespawning = false;
+        let rearViewCamera = null;      // Rear-view camera for tracking pursuers
+        let rearViewRenderer = null;    // Renderer for rear-view
 
         // --- Initialization ---
         function init() {
@@ -346,6 +379,9 @@
             createClouds();
 
             createRoads();
+
+            // --- Setup Rear-View Camera ---
+            setupRearViewCamera();
 
             // --- Start Animation Loop ---
             animate(); // <-- START the loop HERE
@@ -1664,6 +1700,7 @@
                     case 'ShiftLeft': case 'ShiftRight': controls.boost = 1; break;
                     case 'ControlLeft': case 'ControlRight': controls.down = 1; break; // Pitch down
                     case 'Space':                   controls.up = 1; break;     // Pitch up
+                    case 'KeyF':                    controls.shoot = 1; shootWeapon(); break; // Fire weapon
                 }
             });
 
@@ -1678,6 +1715,21 @@
                     case 'ShiftLeft': case 'ShiftRight': controls.boost = 0; break;
                     case 'ControlLeft': case 'ControlRight': controls.down = 0; break;
                     case 'Space':                   controls.up = 0; break;
+                    case 'KeyF':                    controls.shoot = 0; break;
+                }
+            });
+
+            // Also support mouse click for shooting
+            document.addEventListener('mousedown', (event) => {
+                if (event.button === 0) { // Left mouse button
+                    controls.shoot = 1;
+                    shootWeapon();
+                }
+            });
+
+            document.addEventListener('mouseup', (event) => {
+                if (event.button === 0) {
+                    controls.shoot = 0;
                 }
             });
         }
@@ -1723,6 +1775,37 @@
                                     addOtherPlayer(playerData.id, playerData.data);
                                 }
                             });
+                            break;
+                        case 'hit':
+                            // Received when this player was hit
+                            if (message.targetId === playerId) {
+                                takeDamage(message.damage);
+                                if (message.position) {
+                                    createExplosion(new THREE.Vector3(...message.position));
+                                }
+                            }
+                            break;
+                        case 'death':
+                            // Another player died
+                            if (message.id !== playerId && otherPlayers.has(message.id)) {
+                                const player = otherPlayers.get(message.id);
+                                if (player.mesh) {
+                                    createExplosion(player.mesh.position);
+                                    player.mesh.visible = false;
+                                }
+                            }
+                            break;
+                        case 'respawn':
+                            // Another player respawned
+                            if (message.id !== playerId && otherPlayers.has(message.id)) {
+                                const player = otherPlayers.get(message.id);
+                                if (player.mesh) {
+                                    player.mesh.visible = true;
+                                    if (message.position) {
+                                        player.mesh.position.fromArray(message.position);
+                                    }
+                                }
+                            }
                             break;
                         default:
                             console.log('Unknown message type:', message.type);
@@ -1850,6 +1933,326 @@
             }
         }
 
+        // --- Combat Functions ---
+        function shootWeapon() {
+            if (isRespawning || !playerAircraft) return;
+
+            const now = Date.now();
+            if (now - lastShootTime < SHOOT_COOLDOWN) return; // Cooldown check
+
+            lastShootTime = now;
+            createProjectile();
+
+            // Send shoot event to server
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'shoot',
+                    id: playerId,
+                    position: playerAircraft.position.toArray(),
+                    direction: new THREE.Vector3(0, 0, -1).applyQuaternion(playerAircraft.quaternion).toArray()
+                }));
+            }
+        }
+
+        function createProjectile() {
+            // Create projectile mesh (bright red sphere with trail)
+            const projectileGeometry = new THREE.SphereGeometry(2, 8, 8);
+            const projectileMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff3300,
+                emissive: 0xff3300,
+                emissiveIntensity: 1
+            });
+            const projectile = new THREE.Mesh(projectileGeometry, projectileMaterial);
+
+            // Position projectile at aircraft position
+            projectile.position.copy(playerAircraft.position);
+
+            // Calculate forward direction based on aircraft orientation
+            const forward = new THREE.Vector3(0, 0, -1);
+            forward.applyQuaternion(playerAircraft.quaternion);
+
+            // Offset projectile forward from aircraft
+            projectile.position.add(forward.clone().multiplyScalar(20));
+
+            // Store velocity and creation time
+            projectile.userData = {
+                velocity: forward.multiplyScalar(PROJECTILE_SPEED),
+                createdAt: Date.now(),
+                ownerId: playerId
+            };
+
+            scene.add(projectile);
+            projectiles.push(projectile);
+        }
+
+        function updateProjectiles(deltaTime) {
+            const now = Date.now();
+
+            // Update each projectile
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const projectile = projectiles[i];
+
+                // Check lifetime
+                if (now - projectile.userData.createdAt > PROJECTILE_LIFETIME) {
+                    scene.remove(projectile);
+                    projectiles.splice(i, 1);
+                    continue;
+                }
+
+                // Update position
+                const velocity = projectile.userData.velocity;
+                projectile.position.add(velocity.clone().multiplyScalar(deltaTime));
+
+                // Check collisions with other players
+                checkProjectileCollisions(projectile, i);
+            }
+        }
+
+        function checkProjectileCollisions(projectile, projectileIndex) {
+            const projectileBox = new THREE.Box3().setFromObject(projectile);
+
+            // Check collision with other players
+            otherPlayers.forEach((otherPlayer, otherId) => {
+                if (!otherPlayer.mesh || projectile.userData.ownerId === otherId) return;
+
+                const playerBox = new THREE.Box3().setFromObject(otherPlayer.mesh);
+
+                if (projectileBox.intersectsBox(playerBox)) {
+                    // Hit! Create explosion and notify server
+                    createExplosion(projectile.position);
+                    scene.remove(projectile);
+                    projectiles.splice(projectileIndex, 1);
+
+                    // Send hit message to server
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'hit',
+                            id: playerId,
+                            targetId: otherId,
+                            damage: PROJECTILE_DAMAGE,
+                            position: projectile.position.toArray()
+                        }));
+                    }
+
+                    playerKills++;
+                    updateHUD();
+                    showKillNotification('HIT +' + PROJECTILE_DAMAGE);
+                }
+            });
+        }
+
+        function createExplosion(position) {
+            // Create explosion particle system
+            const particleCount = 50;
+            const particles = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const velocities = [];
+
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = position.x;
+                positions[i * 3 + 1] = position.y;
+                positions[i * 3 + 2] = position.z;
+
+                // Random velocity for each particle
+                velocities.push(new THREE.Vector3(
+                    (Math.random() - 0.5) * 200,
+                    (Math.random() - 0.5) * 200,
+                    (Math.random() - 0.5) * 200
+                ));
+            }
+
+            particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+            const particleMaterial = new THREE.PointsMaterial({
+                color: 0xff6600,
+                size: 8,
+                transparent: true,
+                opacity: 1,
+                blending: THREE.AdditiveBlending
+            });
+
+            const particleSystem = new THREE.Points(particles, particleMaterial);
+            scene.add(particleSystem);
+
+            // Animate explosion
+            const startTime = Date.now();
+            const explosionDuration = 500; // ms
+
+            function animateExplosion() {
+                const elapsed = Date.now() - startTime;
+                const progress = elapsed / explosionDuration;
+
+                if (progress >= 1) {
+                    scene.remove(particleSystem);
+                    return;
+                }
+
+                // Update particle positions
+                const positions = particleSystem.geometry.attributes.position.array;
+                for (let i = 0; i < particleCount; i++) {
+                    positions[i * 3] += velocities[i].x * 0.016; // Approximate delta
+                    positions[i * 3 + 1] += velocities[i].y * 0.016;
+                    positions[i * 3 + 2] += velocities[i].z * 0.016;
+                }
+                particleSystem.geometry.attributes.position.needsUpdate = true;
+
+                // Fade out
+                particleMaterial.opacity = 1 - progress;
+
+                requestAnimationFrame(animateExplosion);
+            }
+
+            animateExplosion();
+        }
+
+        function takeDamage(damage) {
+            if (isRespawning) return;
+
+            playerHealth -= damage;
+            if (playerHealth < 0) playerHealth = 0;
+
+            updateHUD();
+
+            // Visual feedback - flash red
+            if (playerAircraft) {
+                playerAircraft.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach(mat => {
+                            if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
+                                mat.emissive.setHex(0xff0000);
+                                setTimeout(() => {
+                                    mat.emissive.setHex(0x000000);
+                                }, 100);
+                            }
+                        });
+                    }
+                });
+            }
+
+            if (playerHealth <= 0) {
+                die();
+            }
+        }
+
+        function die() {
+            if (isRespawning) return;
+
+            isRespawning = true;
+            playerDeaths++;
+            updateHUD();
+
+            // Create death explosion
+            if (playerAircraft) {
+                createExplosion(playerAircraft.position);
+            }
+
+            // Show death message
+            document.getElementById('respawn-message').style.display = 'block';
+
+            // Hide aircraft
+            if (playerAircraft) {
+                playerAircraft.visible = false;
+            }
+
+            // Send death message to server
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'death',
+                    id: playerId
+                }));
+            }
+
+            // Respawn after delay
+            setTimeout(() => {
+                respawnPlayer();
+            }, RESPAWN_TIME);
+        }
+
+        function respawnPlayer() {
+            isRespawning = false;
+            playerHealth = playerMaxHealth;
+
+            // Reset position to random spawn point
+            if (playerAircraft) {
+                playerAircraft.position.set(
+                    (Math.random() - 0.5) * 1000,
+                    200 + Math.random() * 200,
+                    (Math.random() - 0.5) * 1000
+                );
+                playerAircraft.visible = true;
+            }
+
+            // Reset velocity
+            playerVelocity.set(0, 0, 0);
+            playerAngularVelocity.set(0, 0, 0);
+
+            // Hide death message
+            document.getElementById('respawn-message').style.display = 'none';
+
+            updateHUD();
+
+            // Send respawn message to server
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'respawn',
+                    id: playerId,
+                    position: playerAircraft.position.toArray()
+                }));
+            }
+        }
+
+        function setupRearViewCamera() {
+            // Create rear-view camera
+            rearViewCamera = new THREE.PerspectiveCamera(60, 200 / 150, 0.1, 1000);
+
+            // Create renderer for rear-view
+            const container = document.getElementById('rearview-container');
+            rearViewRenderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
+            rearViewRenderer.setSize(200, 150);
+            rearViewRenderer.setClearColor(0x000000, 0.5);
+            container.appendChild(rearViewRenderer.domElement);
+        }
+
+        function updateRearViewCamera() {
+            if (!rearViewCamera || !rearViewRenderer || !playerAircraft) return;
+
+            // Position camera behind aircraft
+            const backward = new THREE.Vector3(0, 0, 1); // Opposite of forward
+            backward.applyQuaternion(playerAircraft.quaternion);
+
+            rearViewCamera.position.copy(playerAircraft.position);
+            rearViewCamera.position.add(backward.multiplyScalar(30));
+            rearViewCamera.position.y += 5;
+
+            // Look backward
+            const lookTarget = playerAircraft.position.clone().add(backward.multiplyScalar(100));
+            rearViewCamera.lookAt(lookTarget);
+
+            // Render rear view
+            rearViewRenderer.render(scene, rearViewCamera);
+        }
+
+        function updateHUD() {
+            document.getElementById('health').textContent = Math.max(0, playerHealth).toFixed(0);
+            document.getElementById('kills').textContent = playerKills;
+            document.getElementById('deaths').textContent = playerDeaths;
+
+            // Update health bar
+            const healthPercent = (playerHealth / playerMaxHealth) * 100;
+            document.getElementById('health-bar-fill').style.width = healthPercent + '%';
+        }
+
+        function showKillNotification(text) {
+            const notification = document.getElementById('kill-notification');
+            notification.textContent = text;
+            notification.style.display = 'block';
+
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 2000);
+        }
+
         // --- Game Loop ---
         function animate() {
             requestAnimationFrame(animate);
@@ -1871,6 +2274,10 @@
             updateCameraFOV();
             updateDayNightCycle(deltaTime);
             checkCollisions();
+
+            // --- Combat System Updates ---
+            updateProjectiles(deltaTime);
+            updateRearViewCamera();
 
             // Send player state periodically
             const now = Date.now();

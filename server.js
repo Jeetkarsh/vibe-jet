@@ -7,6 +7,7 @@ const wss = new WebSocket.Server({ port: PORT });
 // Store connected clients and their latest known state
 const clients = new Map(); // Map<ws, { id: string, lastUpdate: number, data: object | null }>
 const playerStates = new Map(); // Map<playerId, data: object> - Persist state slightly even if client map entry removed briefly
+const playerHealth = new Map(); // Map<playerId, health: number> - Track player health
 
 const TICK_RATE = 10; // Updates per second for broadcasting game state (can be different from client send rate)
 const UPDATE_INTERVAL = 1000 / TICK_RATE;
@@ -25,6 +26,7 @@ wss.on('connection', (ws) => {
         data: null // Initialize data as null
     };
     clients.set(ws, clientInfo);
+    playerHealth.set(clientId, 100); // Initialize health
     console.log(`Client connected: ${clientId} (Total: ${clients.size})`);
 
     // Send the new client their unique ID
@@ -87,6 +89,62 @@ wss.on('connection', (ws) => {
                         console.warn(`Invalid player_update data from ${clientData.id}`);
                     }
                     break;
+                case 'shoot':
+                    // Broadcast shoot event to all other players
+                    broadcast({
+                        type: 'shoot',
+                        id: clientData.id,
+                        position: parsedMessage.position,
+                        direction: parsedMessage.direction
+                    }, ws);
+                    break;
+                case 'hit':
+                    // Player hit another player - validate and broadcast
+                    const targetId = parsedMessage.targetId;
+                    const damage = parsedMessage.damage || 20;
+
+                    if (playerHealth.has(targetId)) {
+                        let health = playerHealth.get(targetId);
+                        health -= damage;
+                        playerHealth.set(targetId, Math.max(0, health));
+
+                        // Find target's websocket and send hit message
+                        let targetWs = null;
+                        clients.forEach((client, ws) => {
+                            if (client.id === targetId) {
+                                targetWs = ws;
+                            }
+                        });
+
+                        if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+                            targetWs.send(JSON.stringify({
+                                type: 'hit',
+                                id: clientData.id,
+                                targetId: targetId,
+                                damage: damage,
+                                position: parsedMessage.position
+                            }));
+                        }
+
+                        console.log(`Player ${clientData.id} hit ${targetId} for ${damage} damage. Health: ${health}`);
+                    }
+                    break;
+                case 'death':
+                    // Player died - broadcast to all
+                    playerHealth.set(clientData.id, 0);
+                    broadcast({ type: 'death', id: clientData.id }, ws);
+                    console.log(`Player ${clientData.id} died`);
+                    break;
+                case 'respawn':
+                    // Player respawned - restore health and broadcast
+                    playerHealth.set(clientData.id, 100);
+                    broadcast({
+                        type: 'respawn',
+                        id: clientData.id,
+                        position: parsedMessage.position
+                    }, ws);
+                    console.log(`Player ${clientData.id} respawned`);
+                    break;
                 // Add other message types handlers if needed (chat, actions, etc.)
                 default:
                     console.log(`Received unhandled message type ${parsedMessage.type} from ${clientData.id}`);
@@ -115,6 +173,7 @@ function handleDisconnect(ws) {
         broadcast({ type: 'player_leave', id: clientInfo.id }, ws); // Inform others
         clients.delete(ws);
         playerStates.delete(clientInfo.id); // Remove player state on disconnect
+        playerHealth.delete(clientInfo.id); // Remove player health on disconnect
     }
 }
 

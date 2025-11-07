@@ -5,29 +5,132 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vibe Jet</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; }
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Orbitron', monospace;
+        }
         canvas { display: block; }
+
         #info {
             position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            font-family: monospace;
-            background-color: rgba(0,0,0,0.5);
-            padding: 5px;
+            top: 20px;
+            left: 20px;
+            color: #00ffff;
+            font-family: 'Orbitron', monospace;
+            font-weight: 700;
+            background: linear-gradient(135deg, rgba(0,20,40,0.85), rgba(0,40,80,0.85));
+            padding: 20px 25px;
+            border-radius: 12px;
+            border: 2px solid rgba(0,255,255,0.4);
+            box-shadow: 0 0 30px rgba(0,255,255,0.3), inset 0 0 20px rgba(0,100,200,0.2);
+            backdrop-filter: blur(10px);
+            font-size: 16px;
+            line-height: 1.8;
+            letter-spacing: 1px;
+        }
+
+        #info span {
+            color: #ffaa00;
+            font-weight: 900;
+            text-shadow: 0 0 10px rgba(255,170,0,0.8);
+        }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            border: 2px solid rgba(0,255,255,0.6);
+            border-radius: 50%;
+            pointer-events: none;
+            box-shadow: 0 0 20px rgba(0,255,255,0.5);
+        }
+
+        #crosshair::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 2px;
+            height: 60px;
+            background: rgba(0,255,255,0.6);
+        }
+
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px;
+            height: 2px;
+            background: rgba(0,255,255,0.6);
+        }
+
+        #speedbar {
+            position: absolute;
+            right: 30px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 8px;
+            height: 300px;
+            background: rgba(0,20,40,0.7);
+            border: 2px solid rgba(0,255,255,0.4);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        #speedbar-fill {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            background: linear-gradient(to top, #00ffff, #ffaa00, #ff0000);
+            transition: height 0.1s ease;
+            box-shadow: 0 0 20px rgba(0,255,255,0.8);
+        }
+
+        #boost-indicator {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #ff4400;
+            font-family: 'Orbitron', monospace;
+            font-weight: 900;
+            font-size: 24px;
+            text-shadow: 0 0 20px rgba(255,68,0,1);
+            display: none;
+            animation: pulse 0.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+            50% { opacity: 0.7; transform: translateX(-50%) scale(1.1); }
         }
     </style>
     <link rel="shortcut icon" href="#">
 </head>
 <body>
-    <div id="loading-indicator" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 24px; font-family: monospace; background-color: rgba(0,0,0,0.7); padding: 20px; border-radius: 5px; display: none;">
+    <div id="loading-indicator" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 24px; font-family: 'Orbitron', monospace; background-color: rgba(0,0,0,0.7); padding: 20px; border-radius: 5px; display: none;">
         Loading Model...
     </div>
     <div id="info">
-        Speed: <span id="speed">0</span> km/h<br>
-        Altitude: <span id="altitude">0</span> m<br>
-        Players: <span id="players-count">1</span>
+        SPEED: <span id="speed">0</span> km/h<br>
+        ALTITUDE: <span id="altitude">0</span> m<br>
+        PLAYERS: <span id="players-count">1</span>
     </div>
+    <div id="crosshair"></div>
+    <div id="speedbar">
+        <div id="speedbar-fill" style="height: 0%;"></div>
+    </div>
+    <div id="boost-indicator">⚡ AFTERBURNER ⚡</div>
     <script type="importmap">
         {
             "imports": {
@@ -39,6 +142,12 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+        import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
         // import { OrbitControls } from 'three/addons/controls/OrbitControls.js'; // Optional for debugging
 
         // --- Configuration ---
@@ -91,6 +200,8 @@
 
         // --- Global Variables ---
         let scene, camera, renderer, clock, skyLight, sunLight;
+        let composer, bloomPass, ssaoPass;  // Post-processing
+        let jetTrailParticles = [];          // Particle system for jet trails
         let playerAircraft = null; // Initialize as null
         let playerVelocity, playerAngularVelocity;
         let controls = { forward: 0, backward: 0, left: 0, right: 0, up: 0, down: 0, boost: 0 };
@@ -117,8 +228,14 @@
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
+            renderer.toneMapping = THREE.ACESFilmicToneMapping; // Modern tone mapping
+            renderer.toneMappingExposure = 1.2;
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
             document.body.appendChild(renderer.domElement);
             clock = new THREE.Clock();
+
+            // --- Post-processing Setup ---
+            setupPostProcessing();
 
             // --- Get Loading Indicator ---
             loadingIndicator = document.getElementById('loading-indicator');
@@ -127,19 +244,32 @@
             skyLight = new THREE.HemisphereLight(0x87ceeb, 0x000000, 0.6); // Sky, Ground, Intensity
             scene.add(skyLight);
 
-            sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            sunLight = new THREE.DirectionalLight(0xffffff, 2.0);
             sunLight.position.set(0, 1000, 1000); // Initial position
             sunLight.castShadow = true;
-            sunLight.shadow.mapSize.width = 2048; // Higher resolution shadows
-            sunLight.shadow.mapSize.height = 2048;
+            // Ultra high-quality shadows
+            sunLight.shadow.mapSize.width = 4096;
+            sunLight.shadow.mapSize.height = 4096;
             sunLight.shadow.camera.near = 100;
             sunLight.shadow.camera.far = 5000;
             sunLight.shadow.camera.left = -GROUND_SIZE / 2;
             sunLight.shadow.camera.right = GROUND_SIZE / 2;
             sunLight.shadow.camera.top = GROUND_SIZE / 2;
             sunLight.shadow.camera.bottom = -GROUND_SIZE / 2;
+            sunLight.shadow.bias = -0.0001;
+            sunLight.shadow.normalBias = 0.02;
             scene.add(sunLight);
             scene.add(sunLight.target); // Important for directional light targeting
+
+            // Add fill light for better overall illumination
+            const fillLight = new THREE.DirectionalLight(0x8899ff, 0.4);
+            fillLight.position.set(-500, 300, -500);
+            scene.add(fillLight);
+
+            // Add rim/back light for dramatic aircraft silhouettes
+            const rimLight = new THREE.DirectionalLight(0xffaa88, 0.5);
+            rimLight.position.set(0, 500, -1000);
+            scene.add(rimLight);
 
             // Fog
             scene.fog = new THREE.Fog(0xcccccc, 1000, 15000);
@@ -174,6 +304,39 @@
 
             // Start Animation Loop (will be started later in initializeGame)
             // animate();
+        }
+
+        function setupPostProcessing() {
+            // Create composer
+            composer = new EffectComposer(renderer);
+
+            // Add render pass
+            const renderPass = new RenderPass(scene, camera);
+            composer.addPass(renderPass);
+
+            // Add SSAO (Screen Space Ambient Occlusion) for realistic shadows
+            ssaoPass = new SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
+            ssaoPass.kernelRadius = 16;
+            ssaoPass.minDistance = 0.001;
+            ssaoPass.maxDistance = 0.1;
+            composer.addPass(ssaoPass);
+
+            // Add bloom effect for glowing lights and afterburner
+            bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                1.5,  // strength
+                0.4,  // radius
+                0.85  // threshold
+            );
+            composer.addPass(bloomPass);
+
+            // Add SMAA (Enhanced Anti-aliasing)
+            const smaaPass = new SMAAPass(window.innerWidth, window.innerHeight);
+            composer.addPass(smaaPass);
+
+            // Output pass for proper color space
+            const outputPass = new OutputPass();
+            composer.addPass(outputPass);
         }
 
         function showLoadingIndicator(show) {
@@ -347,6 +510,8 @@
 
             createRoads();
 
+            createJetTrailParticles();
+
             // --- Start Animation Loop ---
             animate(); // <-- START the loop HERE
             console.log("Game initialized and animation loop started.");
@@ -381,7 +546,6 @@
         // This will be similar to the old `createBuildings`, but with more variation.
         function createSkyscrapers(count) {
             console.log("Creating skyscrapers...");
-            const buildingMaterial = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.8, metalness: 0.2 });
             const buildingGeometry = new THREE.BoxGeometry(1, 1, 1); // Base geometry
 
             for (let i = 0; i < count; i++) {
@@ -390,10 +554,34 @@
                 const width = Math.random() * 50 + 20;
                 const depth = Math.random() * 50 + 20;
 
-                // Clone material for potential color variation
-                const materialInstance = buildingMaterial.clone();
-                // Randomly vary color slightly
-                materialInstance.color.setHSL(0, 0, 0.5 + Math.random() * 0.3); // Shades of grey
+                // Create diverse material types for visual variety
+                const buildingType = Math.random();
+                let materialInstance;
+
+                if (buildingType < 0.3) {
+                    // Glass/reflective modern buildings (30%)
+                    materialInstance = new THREE.MeshStandardMaterial({
+                        color: new THREE.Color().setHSL(0.55, 0.3, 0.7),
+                        roughness: 0.1,
+                        metalness: 0.9,
+                        envMapIntensity: 1.5
+                    });
+                } else if (buildingType < 0.6) {
+                    // Concrete/matte buildings (30%)
+                    materialInstance = new THREE.MeshStandardMaterial({
+                        color: new THREE.Color().setHSL(0, 0, 0.4 + Math.random() * 0.3),
+                        roughness: 0.95,
+                        metalness: 0.05
+                    });
+                } else {
+                    // Semi-reflective buildings with color variation (40%)
+                    materialInstance = new THREE.MeshStandardMaterial({
+                        color: new THREE.Color().setHSL(Math.random() * 0.1, 0.1, 0.5 + Math.random() * 0.2),
+                        roughness: 0.3 + Math.random() * 0.4,
+                        metalness: 0.3 + Math.random() * 0.4,
+                        envMapIntensity: 0.8
+                    });
+                }
 
                 const building = new THREE.Mesh(buildingGeometry, materialInstance);
                 building.scale.set(width, height, depth);
@@ -1348,10 +1536,11 @@
                     // const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
                     const groundMaterial = new THREE.MeshStandardMaterial({
                         map: texture, // Apply the loaded texture
-                        // color: 0x555555, // Color is now mostly from texture
-                        side: THREE.DoubleSide, // Keep double side if needed, but maybe FrontSide is enough (Consider THREE.FrontSide if performance needed)
-                        roughness: 0.9, // Increase roughness for less shine
-                        metalness: 0.1
+                        color: 0x88aa66, // Slight green tint for grass
+                        side: THREE.FrontSide, // Only need front side for performance
+                        roughness: 1.0, // Maximum roughness for matte terrain
+                        metalness: 0.0, // No metallic properties for grass
+                        envMapIntensity: 0.3 // Subtle environment reflections
                     });
 
                     // --- Create Ground Mesh ---
@@ -1528,14 +1717,15 @@
                     cloudGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
 
                     const cloudMaterial = new THREE.PointsMaterial({
-                        size: CLOUD_SIZE,
+                        size: CLOUD_SIZE * 1.5, // Larger for more volumetric feel
                         map: cloudTexture,
-                        blending: THREE.AdditiveBlending, // Blend clouds nicely
-                        depthWrite: false, // Often needed for transparency
+                        blending: THREE.NormalBlending, // More realistic blending
+                        depthWrite: false,
                         transparent: true,
-                        opacity: 0.6, // Make clouds slightly translucent (adjust)
-                        sizeAttenuation: true, // Make distant clouds smaller
-                        color: 0xeeeeff // Slight blueish-white tint (adjust)
+                        opacity: 0.8, // More opaque for better visibility
+                        sizeAttenuation: true,
+                        color: 0xffffff, // Pure white for realistic clouds
+                        fog: true // React to scene fog for depth
                     });
 
                     clouds = new THREE.Points(cloudGeometry, cloudMaterial); // Assign to global variable
@@ -1550,6 +1740,129 @@
                     console.error("Failed to load cloud texture:", error);
                 }
             );
+        }
+
+        function createJetTrailParticles() {
+            console.log("Creating jet trail particle system...");
+
+            // Create a pool of reusable particles for the jet trail
+            const particleCount = 300;
+            const particleGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            const sizes = new Float32Array(particleCount);
+            const lifetimes = new Float32Array(particleCount);
+
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = 0;
+                positions[i * 3 + 1] = 0;
+                positions[i * 3 + 2] = 0;
+
+                // Orange/red hot exhaust colors
+                colors[i * 3] = 1.0;     // R
+                colors[i * 3 + 1] = 0.5; // G
+                colors[i * 3 + 2] = 0.2; // B
+
+                sizes[i] = 0;
+                lifetimes[i] = 0;
+            }
+
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            particleGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+            const particleMaterial = new THREE.PointsMaterial({
+                size: 15,
+                vertexColors: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                transparent: true,
+                opacity: 0.8,
+                sizeAttenuation: true
+            });
+
+            const particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(particleSystem);
+
+            // Store particle system info for animation
+            jetTrailParticles = {
+                system: particleSystem,
+                positions: positions,
+                colors: colors,
+                sizes: sizes,
+                lifetimes: lifetimes,
+                particleCount: particleCount,
+                currentParticle: 0,
+                maxLifetime: 1.5 // seconds
+            };
+
+            console.log("Jet trail particle system created.");
+        }
+
+        function updateJetTrailParticles(deltaTime) {
+            if (!jetTrailParticles || !playerAircraft) return;
+
+            const { positions, colors, sizes, lifetimes, particleCount, maxLifetime } = jetTrailParticles;
+            const positionAttribute = jetTrailParticles.system.geometry.attributes.position;
+            const sizeAttribute = jetTrailParticles.system.geometry.attributes.size;
+            const colorAttribute = jetTrailParticles.system.geometry.attributes.color;
+
+            // Update existing particles
+            for (let i = 0; i < particleCount; i++) {
+                if (lifetimes[i] > 0) {
+                    lifetimes[i] -= deltaTime;
+
+                    // Fade out and expand particles as they age
+                    const lifeRatio = lifetimes[i] / maxLifetime;
+                    sizes[i] = 15 * (1 - lifeRatio) * 2;
+
+                    // Change color from orange to gray/black as it cools
+                    colors[i * 3] = 1.0 * lifeRatio;       // R
+                    colors[i * 3 + 1] = 0.5 * lifeRatio;   // G
+                    colors[i * 3 + 2] = 0.2 * lifeRatio;   // B
+
+                    if (lifetimes[i] <= 0) {
+                        sizes[i] = 0;
+                    }
+                }
+            }
+
+            // Emit new particles when boosting or flying
+            if (controls.boost || playerVelocity.length() > 50) {
+                const emitRate = controls.boost ? 10 : 5; // Particles per frame
+
+                for (let e = 0; e < emitRate; e++) {
+                    const idx = jetTrailParticles.currentParticle;
+
+                    // Get exhaust position (behind the aircraft)
+                    const exhaustOffset = new THREE.Vector3(0, 0, -40); // Behind aircraft
+                    exhaustOffset.applyQuaternion(playerAircraft.quaternion);
+                    const exhaustPos = playerAircraft.position.clone().add(exhaustOffset);
+
+                    // Add some random spread
+                    exhaustPos.x += (Math.random() - 0.5) * 5;
+                    exhaustPos.y += (Math.random() - 0.5) * 5;
+                    exhaustPos.z += (Math.random() - 0.5) * 5;
+
+                    positions[idx * 3] = exhaustPos.x;
+                    positions[idx * 3 + 1] = exhaustPos.y;
+                    positions[idx * 3 + 2] = exhaustPos.z;
+
+                    lifetimes[idx] = maxLifetime;
+                    sizes[idx] = controls.boost ? 20 : 10;
+
+                    // Bright orange for boost, dimmer for normal
+                    colors[idx * 3] = controls.boost ? 1.0 : 0.8;
+                    colors[idx * 3 + 1] = controls.boost ? 0.6 : 0.4;
+                    colors[idx * 3 + 2] = controls.boost ? 0.3 : 0.1;
+
+                    jetTrailParticles.currentParticle = (idx + 1) % particleCount;
+                }
+            }
+
+            positionAttribute.needsUpdate = true;
+            sizeAttribute.needsUpdate = true;
+            colorAttribute.needsUpdate = true;
         }
 
         function createRoads() {
@@ -1870,6 +2183,7 @@
             updatePlayerMovement(deltaTime);
             updateCameraFOV();
             updateDayNightCycle(deltaTime);
+            updateJetTrailParticles(deltaTime);
             checkCollisions();
 
             // Send player state periodically
@@ -1897,8 +2211,9 @@
                 const lookAtTarget = playerAircraft.position.clone().add(new THREE.Vector3(0, 1, 0)); // Look slightly above the origin
                 camera.lookAt(lookAtTarget);
             }
-            
-            renderer.render(scene, camera);
+
+            // Use composer for post-processing instead of direct render
+            composer.render();
             updateInfoPanel();
         }
 
@@ -2131,6 +2446,20 @@
             const altitude = playerAircraft.position.y;
             document.getElementById('speed').textContent = speedKmh.toFixed(0);
             document.getElementById('altitude').textContent = altitude.toFixed(1);
+
+            // Update speedbar
+            const maxSpeed = PLAYER_SPEED * AFTERBURNER_MULTIPLIER * 3.6; // Max possible speed in km/h
+            const speedPercent = Math.min((speedKmh / maxSpeed) * 100, 100);
+            document.getElementById('speedbar-fill').style.height = speedPercent + '%';
+
+            // Update boost indicator
+            const boostIndicator = document.getElementById('boost-indicator');
+            if (controls.boost) {
+                boostIndicator.style.display = 'block';
+            } else {
+                boostIndicator.style.display = 'none';
+            }
+
             // Player count updated in WebSocket handlers
         }
 
@@ -2143,6 +2472,8 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+            ssaoPass.setSize(window.innerWidth, window.innerHeight);
         }
 
         // --- Start the game ---

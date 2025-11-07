@@ -16,8 +16,14 @@
             background-color: rgba(0,0,0,0.5);
             padding: 5px;
         }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
     </style>
     <link rel="shortcut icon" href="#">
+    <!-- GSAP for particle animations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 </head>
 <body>
     <div id="loading-indicator" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 24px; font-family: monospace; background-color: rgba(0,0,0,0.7); padding: 20px; border-radius: 5px; display: none;">
@@ -26,7 +32,21 @@
     <div id="info">
         Speed: <span id="speed">0</span> km/h<br>
         Altitude: <span id="altitude">0</span> m<br>
-        Players: <span id="players-count">1</span>
+        Players: <span id="players-count">1</span><br>
+        Energy: <span id="energy">100</span>%<br>
+        Level: <span id="level">1</span><br>
+        Distance: <span id="distance">0</span> m
+    </div>
+    <!-- Energy Bar -->
+    <div id="energy-bar-container" style="position: absolute; top: 10px; right: 10px; width: 200px; height: 20px; background-color: rgba(0,0,0,0.5); border: 2px solid white; border-radius: 10px; overflow: hidden;">
+        <div id="energy-bar" style="width: 100%; height: 100%; background: linear-gradient(90deg, #00ff00, #ffff00, #ff0000); transition: width 0.3s;"></div>
+    </div>
+    <!-- Game Over Screen -->
+    <div id="gameover-screen" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(0,0,0,0.9); padding: 40px; border-radius: 10px; text-align: center; color: white; font-family: monospace;">
+        <h1 style="font-size: 48px; margin-bottom: 20px;">GAME OVER</h1>
+        <p style="font-size: 24px; margin-bottom: 10px;">Distance: <span id="final-distance">0</span> m</p>
+        <p style="font-size: 24px; margin-bottom: 30px;">Level: <span id="final-level">1</span></p>
+        <button id="replay-button" style="font-size: 20px; padding: 15px 30px; background-color: #00ff00; border: none; border-radius: 5px; cursor: pointer; font-family: monospace;">REPLAY</button>
     </div>
     <script type="importmap">
         {
@@ -89,6 +109,32 @@
         const ROAD_THICKNESS_OFFSET = 0.2; // Place roads slightly above terrain
         const ROAD_TEXTURE_URL = `${ASSETS_DIR}/road.jpg`; // Example texture
 
+        // --- AVIATOR-INSPIRED GAME MECHANICS ---
+        const SEA_RADIUS = 800; // Radius of the cylindrical sea
+        const SEA_SEGMENTS = 40; // Detail level for wave animation
+        const WAVE_AMPLITUDE_MIN = 5;
+        const WAVE_AMPLITUDE_MAX = 20;
+        const WAVE_SPEED_MIN = 0.016;
+        const WAVE_SPEED_MAX = 0.048;
+        const PLANE_DEFAULT_HEIGHT = 100; // Height above sea level
+
+        // Collectibles & Enemies
+        const COIN_COUNT = 20; // Pool size for coins
+        const COIN_DISTANCE_TOLERANCE = 15; // Collision distance
+        const ENEMY_DISTANCE_TOLERANCE = 10;
+        const COIN_VALUE = 3; // Energy added per coin
+        const ENEMY_DAMAGE = 10; // Energy removed per collision
+
+        // Game Progression
+        const INITIAL_ENERGY = 100;
+        const ENERGY_DRAIN_RATE = 0.3; // Energy lost per second
+        const LEVEL_DISTANCE_THRESHOLD = 1000; // Meters to next level
+        const SPEED_INCREMENT_PER_LEVEL = 5;
+        const SPEED_INCREMENT_PER_TIME = 0.002;
+
+        // Particle System
+        const PARTICLE_POOL_SIZE = 50;
+
         // --- Global Variables ---
         let scene, camera, renderer, clock, skyLight, sunLight;
         let playerAircraft = null; // Initialize as null
@@ -106,6 +152,19 @@
         let loadingIndicator = null;    // Simple DOM element for loading message
         let clouds = null;              // Hold the Points object for animation
         let roadTexture = null;         // To store the loaded road texture
+
+        // --- AVIATOR Game State ---
+        let gameState = 'playing'; // 'playing', 'gameover', 'waitingReplay'
+        let gameEnergy = INITIAL_ENERGY;
+        let gameLevel = 1;
+        let gameDistance = 0;
+        let gameSpeed = PLAYER_SPEED; // Current base speed (increases with level)
+        let sea = null; // Ocean mesh with animated waves
+        let seaWaves = []; // Array storing wave animation data per vertex
+        let coinsHolder = []; // Pool of coin objects
+        let enemiesHolder = []; // Pool of enemy objects
+        let particlesHolder = []; // Pool of particle objects for explosions
+        let ambientLight = null; // For flash effects
 
         // --- Initialization ---
         function init() {
@@ -126,6 +185,10 @@
             // Lighting (Day/Night)
             skyLight = new THREE.HemisphereLight(0x87ceeb, 0x000000, 0.6); // Sky, Ground, Intensity
             scene.add(skyLight);
+
+            // Ambient light for flash effects
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
 
             sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
             sunLight.position.set(0, 1000, 1000); // Initial position
@@ -346,6 +409,18 @@
             createClouds();
 
             createRoads();
+
+            // --- Create Aviator-Inspired Systems ---
+            createSea();
+            createCoins();
+            createEnemies();
+            createParticles();
+
+            // Setup replay button
+            const replayButton = document.getElementById('replay-button');
+            if (replayButton) {
+                replayButton.addEventListener('click', resetGame);
+            }
 
             // --- Start Animation Loop ---
             animate(); // <-- START the loop HERE
@@ -1388,6 +1463,417 @@
             return height;
         }
 
+        // === AVIATOR-INSPIRED SYSTEMS ===
+
+        // Create animated ocean with vertex-based waves
+        function createSea() {
+            console.log("Creating animated sea...");
+            const seaGeometry = new THREE.CylinderGeometry(SEA_RADIUS, SEA_RADIUS, 400, SEA_SEGMENTS, SEA_SEGMENTS);
+            seaGeometry.rotateX(-Math.PI / 2); // Make it horizontal
+
+            const seaMaterial = new THREE.MeshPhongMaterial({
+                color: 0x68c3c0,
+                transparent: true,
+                opacity: 0.8,
+                flatShading: true // AVIATOR-STYLE flat shading!
+            });
+
+            sea = new THREE.Mesh(seaGeometry, seaMaterial);
+            sea.position.y = -200; // Place below terrain
+            sea.receiveShadow = true;
+            scene.add(sea);
+
+            // Store wave animation data for each vertex
+            const positionAttribute = seaGeometry.attributes.position;
+            for (let i = 0; i < positionAttribute.count; i++) {
+                const y = positionAttribute.getY(i);
+                const x = positionAttribute.getX(i);
+                const z = positionAttribute.getZ(i);
+
+                seaWaves.push({
+                    x: x,
+                    y: y,
+                    z: z,
+                    ang: Math.random() * Math.PI * 2,
+                    amp: WAVE_AMPLITUDE_MIN + Math.random() * (WAVE_AMPLITUDE_MAX - WAVE_AMPLITUDE_MIN),
+                    speed: WAVE_SPEED_MIN + Math.random() * (WAVE_SPEED_MAX - WAVE_SPEED_MIN)
+                });
+            }
+            console.log("Sea created with " + seaWaves.length + " wave vertices.");
+        }
+
+        // Animate sea waves
+        function updateSeaWaves() {
+            if (!sea || seaWaves.length === 0) return;
+
+            const positionAttribute = sea.geometry.attributes.position;
+            for (let i = 0; i < positionAttribute.count; i++) {
+                const wave = seaWaves[i];
+
+                // Update wave position using sine waves
+                positionAttribute.setX(i, wave.x + Math.cos(wave.ang) * wave.amp);
+                positionAttribute.setY(i, wave.y + Math.sin(wave.ang) * wave.amp);
+
+                // Increment angle for animation
+                wave.ang += wave.speed;
+            }
+            positionAttribute.needsUpdate = true;
+            sea.geometry.computeVertexNormals(); // Recalculate normals for lighting
+        }
+
+        // Create collectible coins
+        function createCoins() {
+            console.log("Creating coin pool...");
+            for (let i = 0; i < COIN_COUNT; i++) {
+                const coinGeometry = new THREE.TetrahedronGeometry(8, 0);
+                const coinMaterial = new THREE.MeshPhongMaterial({
+                    color: 0x009999,
+                    flatShading: true,
+                    shininess: 100
+                });
+                const coin = new THREE.Mesh(coinGeometry, coinMaterial);
+                coin.visible = false; // Start inactive
+                coin.castShadow = true;
+                scene.add(coin);
+
+                // Store game data
+                coin.userData = {
+                    active: false,
+                    angle: 0,
+                    distance: 0
+                };
+                coinsHolder.push(coin);
+            }
+            console.log("Coin pool created: " + COIN_COUNT + " coins.");
+        }
+
+        // Spawn coins in circular pattern around player
+        function spawnCoins() {
+            const nCoins = 1 + Math.floor(Math.random() * 10);
+            const distance = SEA_RADIUS - 50 + Math.random() * 100;
+            const amplitude = 10 + Math.random() * 30;
+
+            for (let i = 0; i < nCoins; i++) {
+                const coin = getInactiveCoin();
+                if (!coin) break;
+
+                coin.userData.active = true;
+                coin.userData.angle = -(i * 0.1);
+                coin.userData.distance = distance;
+                coin.userData.amplitude = amplitude;
+                coin.visible = true;
+            }
+        }
+
+        function getInactiveCoin() {
+            for (let coin of coinsHolder) {
+                if (!coin.userData.active) return coin;
+            }
+            return null;
+        }
+
+        function updateCoins() {
+            for (let coin of coinsHolder) {
+                if (!coin.userData.active) continue;
+
+                // Move coin along circular path
+                coin.userData.angle += 0.02; // Rotation speed
+
+                if (coin.userData.angle > Math.PI) {
+                    // Coin passed the player, recycle it
+                    coin.userData.active = false;
+                    coin.visible = false;
+                    continue;
+                }
+
+                // Calculate position in circular orbit
+                const y = -SEA_RADIUS + Math.sin(coin.userData.angle) * coin.userData.distance;
+                const x = Math.cos(coin.userData.angle) * coin.userData.distance;
+
+                coin.position.set(
+                    playerAircraft.position.x + x,
+                    playerAircraft.position.y + y,
+                    playerAircraft.position.z + Math.sin(coin.userData.angle * 3) * coin.userData.amplitude
+                );
+
+                // Rotate for visual effect
+                coin.rotation.x += 0.05;
+                coin.rotation.y += 0.05;
+            }
+        }
+
+        // Create enemies
+        function createEnemies() {
+            console.log("Creating enemy pool...");
+            for (let i = 0; i < 10; i++) {
+                const enemyGeometry = new THREE.TetrahedronGeometry(8, 2);
+                const enemyMaterial = new THREE.MeshPhongMaterial({
+                    color: 0xf25346,
+                    flatShading: true,
+                    shininess: 100
+                });
+                const enemy = new THREE.Mesh(enemyGeometry, enemyMaterial);
+                enemy.visible = false;
+                enemy.castShadow = true;
+                scene.add(enemy);
+
+                enemy.userData = {
+                    active: false,
+                    angle: 0,
+                    distance: 0
+                };
+                enemiesHolder.push(enemy);
+            }
+            console.log("Enemy pool created: " + enemiesHolder.length + " enemies.");
+        }
+
+        function spawnEnemies() {
+            const nEnemies = gameLevel; // Spawn more enemies per level
+            const distance = SEA_RADIUS - 50 + Math.random() * 100;
+
+            for (let i = 0; i < nEnemies && i < enemiesHolder.length; i++) {
+                const enemy = getInactiveEnemy();
+                if (!enemy) break;
+
+                enemy.userData.active = true;
+                enemy.userData.angle = -(i * 0.2);
+                enemy.userData.distance = distance;
+                enemy.visible = true;
+            }
+        }
+
+        function getInactiveEnemy() {
+            for (let enemy of enemiesHolder) {
+                if (!enemy.userData.active) return enemy;
+            }
+            return null;
+        }
+
+        function updateEnemies() {
+            for (let enemy of enemiesHolder) {
+                if (!enemy.userData.active) continue;
+
+                enemy.userData.angle += 0.02;
+
+                if (enemy.userData.angle > Math.PI) {
+                    enemy.userData.active = false;
+                    enemy.visible = false;
+                    continue;
+                }
+
+                const y = -SEA_RADIUS + Math.sin(enemy.userData.angle) * enemy.userData.distance;
+                const x = Math.cos(enemy.userData.angle) * enemy.userData.distance;
+
+                enemy.position.set(
+                    playerAircraft.position.x + x,
+                    playerAircraft.position.y + y,
+                    playerAircraft.position.z
+                );
+
+                enemy.rotation.x += 0.02;
+                enemy.rotation.z += 0.05;
+            }
+        }
+
+        // Particle explosion system
+        function createParticles() {
+            console.log("Creating particle pool...");
+            for (let i = 0; i < PARTICLE_POOL_SIZE; i++) {
+                const particleGeometry = new THREE.TetrahedronGeometry(3, 0);
+                const particleMaterial = new THREE.MeshPhongMaterial({
+                    color: 0x009999,
+                    flatShading: true,
+                    shininess: 100
+                });
+                const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+                particle.visible = false;
+                scene.add(particle);
+
+                particle.userData = {
+                    active: false
+                };
+                particlesHolder.push(particle);
+            }
+            console.log("Particle pool created: " + PARTICLE_POOL_SIZE + " particles.");
+        }
+
+        function spawnParticles(pos, color, density = 5, scale = 1.0) {
+            for (let i = 0; i < density; i++) {
+                const particle = getInactiveParticle();
+                if (!particle) break;
+
+                particle.position.copy(pos);
+                particle.material.color.setHex(color);
+                particle.scale.set(scale, scale, scale);
+                particle.visible = true;
+                particle.userData.active = true;
+
+                // Animate particle using GSAP
+                const speed = 0.6 + Math.random() * 0.2;
+                const tx = pos.x + (Math.random() - 0.5) * 50;
+                const ty = pos.y + (Math.random() - 0.5) * 50;
+                const tz = pos.z + (Math.random() - 0.5) * 50;
+
+                gsap.to(particle.position, {
+                    duration: speed,
+                    x: tx,
+                    y: ty,
+                    z: tz,
+                    ease: "power2.out"
+                });
+
+                gsap.to(particle.scale, {
+                    duration: speed,
+                    x: 0.1,
+                    y: 0.1,
+                    z: 0.1,
+                    ease: "power2.out",
+                    onComplete: () => {
+                        particle.userData.active = false;
+                        particle.visible = false;
+                    }
+                });
+
+                gsap.to(particle.rotation, {
+                    duration: speed,
+                    x: Math.random() * 12,
+                    y: Math.random() * 12,
+                    z: Math.random() * 12
+                });
+            }
+        }
+
+        function getInactiveParticle() {
+            for (let particle of particlesHolder) {
+                if (!particle.userData.active) return particle;
+            }
+            return null;
+        }
+
+        // Check collisions with coins and enemies
+        function checkGameCollisions() {
+            if (!playerAircraft || gameState !== 'playing') return;
+
+            // Check coin collisions
+            for (let coin of coinsHolder) {
+                if (!coin.userData.active) continue;
+
+                const distance = playerAircraft.position.distanceTo(coin.position);
+                if (distance < COIN_DISTANCE_TOLERANCE) {
+                    // Collect coin
+                    coin.userData.active = false;
+                    coin.visible = false;
+                    addEnergy(COIN_VALUE);
+                    spawnParticles(coin.position, 0x009999, 5, 0.8);
+                }
+            }
+
+            // Check enemy collisions
+            for (let enemy of enemiesHolder) {
+                if (!enemy.userData.active) continue;
+
+                const distance = playerAircraft.position.distanceTo(enemy.position);
+                if (distance < ENEMY_DISTANCE_TOLERANCE) {
+                    // Hit enemy
+                    enemy.userData.active = false;
+                    enemy.visible = false;
+                    removeEnergy(ENEMY_DAMAGE);
+                    spawnParticles(enemy.position, 0xf25346, 10, 1.0);
+
+                    // Flash screen
+                    if (ambientLight) {
+                        gsap.to(ambientLight, {
+                            duration: 0.1,
+                            intensity: 2,
+                            yoyo: true,
+                            repeat: 1
+                        });
+                    }
+
+                    // Apply collision force
+                    const diffPos = playerAircraft.position.clone().sub(enemy.position);
+                    const d = diffPos.length();
+                    if (d > 0) {
+                        const pushForce = diffPos.multiplyScalar(100 / d);
+                        playerVelocity.add(pushForce);
+                    }
+                }
+            }
+        }
+
+        // Energy management
+        function addEnergy(amount) {
+            gameEnergy = Math.min(100, gameEnergy + amount);
+            updateEnergyDisplay();
+        }
+
+        function removeEnergy(amount) {
+            gameEnergy = Math.max(0, gameEnergy - amount);
+            updateEnergyDisplay();
+
+            if (gameEnergy <= 0) {
+                gameOver();
+            }
+        }
+
+        function updateEnergyDisplay() {
+            const energyElement = document.getElementById('energy');
+            const energyBar = document.getElementById('energy-bar');
+
+            if (energyElement) energyElement.textContent = Math.floor(gameEnergy);
+            if (energyBar) energyBar.style.width = gameEnergy + '%';
+
+            // Blink effect when low energy
+            if (gameEnergy < 30) {
+                energyBar.style.animation = 'blink 0.5s infinite';
+            } else {
+                energyBar.style.animation = 'none';
+            }
+        }
+
+        function gameOver() {
+            gameState = 'gameover';
+            console.log("Game Over! Distance: " + Math.floor(gameDistance) + " Level: " + gameLevel);
+
+            const gameoverScreen = document.getElementById('gameover-screen');
+            const finalDistance = document.getElementById('final-distance');
+            const finalLevel = document.getElementById('final-level');
+
+            if (gameoverScreen) gameoverScreen.style.display = 'block';
+            if (finalDistance) finalDistance.textContent = Math.floor(gameDistance);
+            if (finalLevel) finalLevel.textContent = gameLevel;
+        }
+
+        function resetGame() {
+            gameState = 'playing';
+            gameEnergy = INITIAL_ENERGY;
+            gameLevel = 1;
+            gameDistance = 0;
+            gameSpeed = PLAYER_SPEED;
+
+            // Reset player position
+            if (playerAircraft) {
+                playerAircraft.position.set(0, 50, 0);
+                playerVelocity.set(0, 0, 0);
+                playerAngularVelocity.set(0, 0, 0);
+            }
+
+            // Deactivate all coins and enemies
+            for (let coin of coinsHolder) {
+                coin.userData.active = false;
+                coin.visible = false;
+            }
+            for (let enemy of enemiesHolder) {
+                enemy.userData.active = false;
+                enemy.visible = false;
+            }
+
+            updateEnergyDisplay();
+            document.getElementById('gameover-screen').style.display = 'none';
+        }
+
+        // === END AVIATOR-INSPIRED SYSTEMS ===
+
         function createPlayerAircraft() {
             // Simple cone shape for the aircraft body
             // const geometry = new THREE.ConeGeometry(2, 8, 8); // Radius, Height, Segments
@@ -1856,21 +2342,58 @@
 
             const deltaTime = clock.getDelta();
 
-            // --- Cloud Animation ---
-            // update cloud object position slightly each frame to simulate drifting.
-            if (clouds) {
-                // Simple drift along X axis
-                clouds.position.x += CLOUD_DRIFT_SPEED * deltaTime;
-                // Optional: Wrap clouds around if they go too far
-                if (clouds.position.x > CLOUD_AREA_XZ / 2) {
-                    clouds.position.x -= CLOUD_AREA_XZ;
+            if (gameState === 'playing') {
+                // --- Cloud Animation ---
+                // update cloud object position slightly each frame to simulate drifting.
+                if (clouds) {
+                    // Simple drift along X axis
+                    clouds.position.x += CLOUD_DRIFT_SPEED * deltaTime;
+                    // Optional: Wrap clouds around if they go too far
+                    if (clouds.position.x > CLOUD_AREA_XZ / 2) {
+                        clouds.position.x -= CLOUD_AREA_XZ;
+                    }
                 }
-            }
 
-            updatePlayerMovement(deltaTime);
-            updateCameraFOV();
-            updateDayNightCycle(deltaTime);
-            checkCollisions();
+                // --- Update Aviator-Inspired Systems ---
+                updateSeaWaves();
+                updateCoins();
+                updateEnemies();
+                checkGameCollisions();
+
+                // --- Energy Drain ---
+                gameEnergy -= ENERGY_DRAIN_RATE * deltaTime;
+                if (gameEnergy <= 0) {
+                    gameEnergy = 0;
+                    gameOver();
+                }
+                updateEnergyDisplay();
+
+                // --- Distance & Level Progression ---
+                const currentSpeed = playerVelocity.length();
+                gameDistance += currentSpeed * deltaTime;
+
+                // Check for level up
+                const newLevel = Math.floor(gameDistance / LEVEL_DISTANCE_THRESHOLD) + 1;
+                if (newLevel > gameLevel) {
+                    gameLevel = newLevel;
+                    console.log("Level Up! Now at level " + gameLevel);
+                }
+
+                // --- Spawn Collectibles & Enemies ---
+                // Spawn coins every 100 meters
+                if (Math.floor(gameDistance) % 100 === 0 && Math.floor(gameDistance) > 0) {
+                    if (Math.random() > 0.5) spawnCoins();
+                }
+                // Spawn enemies every 50 meters
+                if (Math.floor(gameDistance) % 50 === 0 && Math.floor(gameDistance) > 0) {
+                    if (Math.random() > 0.3) spawnEnemies();
+                }
+
+                updatePlayerMovement(deltaTime);
+                updateCameraFOV();
+                updateDayNightCycle(deltaTime);
+                checkCollisions();
+            }
 
             // Send player state periodically
             const now = Date.now();
@@ -2131,6 +2654,8 @@
             const altitude = playerAircraft.position.y;
             document.getElementById('speed').textContent = speedKmh.toFixed(0);
             document.getElementById('altitude').textContent = altitude.toFixed(1);
+            document.getElementById('level').textContent = gameLevel;
+            document.getElementById('distance').textContent = Math.floor(gameDistance);
             // Player count updated in WebSocket handlers
         }
 

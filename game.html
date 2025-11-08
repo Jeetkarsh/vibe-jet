@@ -33,6 +33,119 @@
             letter-spacing: 1px;
         }
 
+        #score-panel {
+            position: absolute;
+            top: 20px;
+            right: 250px;
+            color: #ffaa00;
+            font-family: 'Orbitron', monospace;
+            font-weight: 900;
+            background: linear-gradient(135deg, rgba(40,20,0,0.85), rgba(80,40,0,0.85));
+            padding: 20px 25px;
+            border-radius: 12px;
+            border: 2px solid rgba(255,170,0,0.4);
+            box-shadow: 0 0 30px rgba(255,170,0,0.3), inset 0 0 20px rgba(200,100,0,0.2);
+            backdrop-filter: blur(10px);
+            font-size: 18px;
+            line-height: 1.8;
+            text-align: center;
+        }
+
+        #achievements {
+            position: absolute;
+            bottom: 80px;
+            left: 20px;
+            max-width: 300px;
+        }
+
+        .achievement {
+            background: linear-gradient(135deg, rgba(20,40,0,0.9), rgba(40,80,0,0.9));
+            padding: 10px 15px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            border: 2px solid rgba(0,255,100,0.5);
+            color: #00ff66;
+            font-family: 'Orbitron', monospace;
+            font-weight: 700;
+            font-size: 14px;
+            animation: slideInLeft 0.5s ease-out, fadeOutAchievement 4s ease-out;
+            box-shadow: 0 0 20px rgba(0,255,100,0.4);
+        }
+
+        @keyframes slideInLeft {
+            from { transform: translateX(-400px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes fadeOutAchievement {
+            0%, 70% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        #combo-display {
+            position: absolute;
+            top: 50%;
+            right: 100px;
+            transform: translateY(-50%);
+            color: #ff00ff;
+            font-family: 'Orbitron', monospace;
+            font-weight: 900;
+            font-size: 48px;
+            text-shadow: 0 0 30px rgba(255,0,255,1);
+            display: none;
+            animation: pulsCombo 0.5s infinite;
+        }
+
+        @keyframes pulsCombo {
+            0%, 100% { transform: translateY(-50%) scale(1); }
+            50% { transform: translateY(-50%) scale(1.2); }
+        }
+
+        #notification {
+            position: absolute;
+            top: 150px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, rgba(255,100,0,0.9), rgba(255,150,0,0.9));
+            padding: 15px 30px;
+            border-radius: 10px;
+            border: 2px solid rgba(255,200,0,0.6);
+            color: white;
+            font-family: 'Orbitron', monospace;
+            font-weight: 900;
+            font-size: 20px;
+            text-shadow: 0 0 10px rgba(0,0,0,0.8);
+            display: none;
+            animation: slideDown 0.5s ease-out;
+            box-shadow: 0 0 40px rgba(255,100,0,0.6);
+        }
+
+        @keyframes slideDown {
+            from { transform: translateX(-50%) translateY(-100px); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        }
+
+        #level-up {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ffff00;
+            font-family: 'Orbitron', monospace;
+            font-weight: 900;
+            font-size: 72px;
+            text-shadow: 0 0 50px rgba(255,255,0,1);
+            display: none;
+            animation: levelUpAnim 2s ease-out;
+            pointer-events: none;
+        }
+
+        @keyframes levelUpAnim {
+            0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+            50% { transform: translate(-50%, -50%) scale(1.5); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+        }
+
         #info span {
             color: #ffaa00;
             font-weight: 900;
@@ -126,11 +239,22 @@
         ALTITUDE: <span id="altitude">0</span> m<br>
         PLAYERS: <span id="players-count">1</span>
     </div>
+    <div id="score-panel">
+        <div style="font-size: 14px; color: #00ffff;">RANK: <span id="rank">ROOKIE</span></div>
+        <div style="font-size: 28px; margin: 10px 0;">SCORE</div>
+        <div style="font-size: 36px;"><span id="score">0</span></div>
+        <div style="font-size: 12px; margin-top: 10px;">HIGH: <span id="high-score">0</span></div>
+        <div style="font-size: 12px; margin-top: 5px; color: #00ff00;">XP: <span id="xp">0</span>/<span id="xp-next">100</span></div>
+    </div>
     <div id="crosshair"></div>
     <div id="speedbar">
         <div id="speedbar-fill" style="height: 0%;"></div>
     </div>
     <div id="boost-indicator">⚡ AFTERBURNER ⚡</div>
+    <div id="combo-display"></div>
+    <div id="notification"></div>
+    <div id="level-up"></div>
+    <div id="achievements"></div>
     <script type="importmap">
         {
             "imports": {
@@ -217,6 +341,80 @@
         let loadingIndicator = null;    // Simple DOM element for loading message
         let clouds = null;              // Hold the Points object for animation
         let roadTexture = null;         // To store the loaded road texture
+
+        // --- Addictive Game Mechanics Variables ---
+        let gameStats = {
+            score: 0,
+            highScore: 0,
+            xp: 0,
+            level: 1,
+            rank: 'ROOKIE',
+            totalDistance: 0,
+            totalFlightTime: 0,
+            collectiblesGathered: 0,
+            nearMisses: 0,
+            boostTime: 0,
+            highAltitudeTime: 0,
+            tricksPerformed: 0,
+            sessionsPlayed: 0
+        };
+
+        let combo = {
+            count: 0,
+            multiplier: 1.0,
+            lastActionTime: 0,
+            comboTimeout: 3000 // 3 seconds to maintain combo
+        };
+
+        let streak = {
+            collectibles: 0,
+            lastCollectionTime: 0,
+            streakTimeout: 5000 // 5 seconds to maintain streak
+        };
+
+        let achievements = {
+            speedDemon: false,        // Reach max speed
+            skyHigh: false,          // Reach altitude 2000m
+            collector: false,        // Collect 50 items
+            acrobat: false,          // Perform 10 tricks
+            marathon: false,         // Fly for 10 minutes
+            explorer: false,         // Travel 50km
+            riskTaker: false,        // 50 near misses
+            boostMaster: false,      // Use boost for 2 minutes total
+            combo10: false,          // Achieve 10x combo
+            veteran: false           // Play 10 sessions
+        };
+
+        let collectibles = [];
+        const COLLECTIBLE_COUNT = 50;
+        const COLLECTIBLE_VALUE = 100;
+        const NEAR_MISS_DISTANCE = 50;
+        const TRICK_THRESHOLD = 2.0; // Angular velocity threshold for tricks
+
+        const RANKS = [
+            { name: 'ROOKIE', xp: 0 },
+            { name: 'PILOT', xp: 100 },
+            { name: 'ACE', xp: 300 },
+            { name: 'VETERAN', xp: 600 },
+            { name: 'ELITE', xp: 1000 },
+            { name: 'MASTER', xp: 1500 },
+            { name: 'LEGEND', xp: 2500 },
+            { name: 'MYTHIC', xp: 5000 }
+        ];
+
+        let lastPosition = new THREE.Vector3();
+        let sessionStartTime = Date.now();
+        let lastNearMissTime = 0;
+        let lastTrickTime = 0;
+
+        // Mission system
+        let missions = [
+            { id: 'speed100', name: 'Need for Speed', desc: 'Reach 500 km/h', completed: false, reward: 1000, check: () => playerVelocity.length() * 3.6 >= 500 },
+            { id: 'collect10', name: 'Treasure Hunter', desc: 'Collect 10 rings', completed: false, reward: 500, check: () => gameStats.collectiblesGathered >= 10 },
+            { id: 'altitude1000', name: 'Sky Walker', desc: 'Reach 1000m altitude', completed: false, reward: 300, check: () => playerAircraft && playerAircraft.position.y >= 1000 },
+            { id: 'distance10', name: 'Wanderer', desc: 'Travel 10km', completed: false, reward: 400, check: () => gameStats.totalDistance >= 10 },
+            { id: 'trick5', name: 'Stunt Pilot', desc: 'Perform 5 tricks', completed: false, reward: 600, check: () => gameStats.tricksPerformed >= 5 }
+        ];
 
         // --- Initialization ---
         function init() {
@@ -495,6 +693,9 @@
             showLoadingIndicator(false); // Hide loading indicator
             console.log("Initializing game...");
 
+            // --- Load saved game stats ---
+            loadGameStats();
+
             // --- Create Player Aircraft (now clones the loaded model) ---
             createPlayerAircraft();
 
@@ -512,9 +713,183 @@
 
             createJetTrailParticles();
 
+            // --- Create collectibles ---
+            createCollectibles();
+
             // --- Start Animation Loop ---
             animate(); // <-- START the loop HERE
             console.log("Game initialized and animation loop started.");
+        }
+
+        // --- Game Stats Management ---
+        function loadGameStats() {
+            const saved = localStorage.getItem('vibeJetStats');
+            if (saved) {
+                const savedStats = JSON.parse(saved);
+                gameStats = { ...gameStats, ...savedStats };
+                gameStats.sessionsPlayed++;
+                achievements = { ...achievements, ...(savedStats.achievements || {}) };
+            } else {
+                gameStats.sessionsPlayed = 1;
+            }
+            gameStats.score = 0; // Reset score for new session
+            updateUI();
+            checkAchievement('veteran', gameStats.sessionsPlayed >= 10, 'VETERAN: Played 10 sessions!');
+        }
+
+        function saveGameStats() {
+            gameStats.highScore = Math.max(gameStats.highScore, gameStats.score);
+            const toSave = { ...gameStats, achievements };
+            localStorage.setItem('vibeJetStats', JSON.stringify(toSave));
+        }
+
+        function addScore(points, reason = '') {
+            const earnedPoints = Math.floor(points * combo.multiplier);
+            gameStats.score += earnedPoints;
+            addXP(earnedPoints / 10); // 10% of score as XP
+            updateCombo();
+
+            if (reason && earnedPoints > 50) {
+                showNotification(`+${earnedPoints} ${reason}`);
+            }
+
+            updateUI();
+            saveGameStats();
+        }
+
+        function addXP(amount) {
+            gameStats.xp += amount;
+
+            // Check for level up
+            const nextRank = RANKS.find(r => r.xp > gameStats.xp);
+            const currentRankIndex = RANKS.findIndex(r => r.name === gameStats.rank);
+            const nextRankIndex = nextRank ? RANKS.indexOf(nextRank) : RANKS.length - 1;
+
+            if (nextRankIndex > currentRankIndex) {
+                levelUp(RANKS[nextRankIndex].name);
+            }
+        }
+
+        function levelUp(newRank) {
+            gameStats.rank = newRank;
+            gameStats.level++;
+            showLevelUp(newRank);
+            showNotification(`RANK UP: ${newRank}!`);
+            saveGameStats();
+        }
+
+        function updateCombo() {
+            const now = Date.now();
+
+            // Check if combo expired
+            if (now - combo.lastActionTime > combo.comboTimeout) {
+                combo.count = 0;
+                combo.multiplier = 1.0;
+            }
+
+            combo.count++;
+            combo.multiplier = 1.0 + (combo.count * 0.1); // 10% increase per combo
+            combo.lastActionTime = now;
+
+            // Show combo display
+            if (combo.count > 2) {
+                const comboEl = document.getElementById('combo-display');
+                comboEl.textContent = `${combo.count}x COMBO!`;
+                comboEl.style.display = 'block';
+
+                setTimeout(() => {
+                    comboEl.style.display = 'none';
+                }, 2000);
+            }
+
+            checkAchievement('combo10', combo.count >= 10, 'COMBO MASTER: 10x combo!');
+        }
+
+        function checkAchievement(id, condition, message) {
+            if (!achievements[id] && condition) {
+                achievements[id] = true;
+                showAchievement(message);
+                addScore(500, 'ACHIEVEMENT');
+                saveGameStats();
+            }
+        }
+
+        function showAchievement(text) {
+            const container = document.getElementById('achievements');
+            const achDiv = document.createElement('div');
+            achDiv.className = 'achievement';
+            achDiv.textContent = text;
+            container.appendChild(achDiv);
+
+            setTimeout(() => {
+                achDiv.remove();
+            }, 4000);
+        }
+
+        function showNotification(text) {
+            const notif = document.getElementById('notification');
+            notif.textContent = text;
+            notif.style.display = 'block';
+
+            setTimeout(() => {
+                notif.style.display = 'none';
+            }, 2000);
+        }
+
+        function showLevelUp(rank) {
+            const levelUp = document.getElementById('level-up');
+            levelUp.textContent = `RANK UP!\n${rank}`;
+            levelUp.style.display = 'block';
+
+            setTimeout(() => {
+                levelUp.style.display = 'none';
+            }, 2000);
+        }
+
+        function updateUI() {
+            document.getElementById('score').textContent = gameStats.score;
+            document.getElementById('high-score').textContent = gameStats.highScore;
+            document.getElementById('xp').textContent = Math.floor(gameStats.xp);
+            document.getElementById('rank').textContent = gameStats.rank;
+
+            const nextRank = RANKS.find(r => r.xp > gameStats.xp);
+            const xpToNext = nextRank ? nextRank.xp : gameStats.xp;
+            document.getElementById('xp-next').textContent = xpToNext;
+        }
+
+        function createCollectibles() {
+            const collectibleGeometry = new THREE.TorusGeometry(8, 2, 16, 32);
+            const collectibleMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffff00,
+                emissive: 0xffaa00,
+                emissiveIntensity: 2.0,
+                metalness: 0.8,
+                roughness: 0.2
+            });
+
+            for (let i = 0; i < COLLECTIBLE_COUNT; i++) {
+                const collectible = new THREE.Mesh(collectibleGeometry, collectibleMaterial.clone());
+
+                const x = (Math.random() - 0.5) * GROUND_SIZE * 0.8;
+                const z = (Math.random() - 0.5) * GROUND_SIZE * 0.8;
+                const y = 200 + Math.random() * 800; // Altitude between 200-1000m
+
+                collectible.position.set(x, y, z);
+                collectible.rotation.x = Math.random() * Math.PI;
+                collectible.userData.rotationSpeed = (Math.random() - 0.5) * 2;
+                collectible.userData.floatOffset = Math.random() * Math.PI * 2;
+                collectible.userData.collected = false;
+
+                // Add a point light to make it glow
+                const light = new THREE.PointLight(0xffff00, 1, 50);
+                light.position.set(0, 0, 0);
+                collectible.add(light);
+                collectible.userData.light = light;
+
+                scene.add(collectible);
+                collectibles.push(collectible);
+            }
+            console.log(`Created ${COLLECTIBLE_COUNT} collectibles`);
         }
 
         function createBuildings() {
@@ -1608,6 +1983,9 @@
             playerVelocity = new THREE.Vector3();
             playerAngularVelocity = new THREE.Vector3();
 
+            // Initialize tracking variables for game stats
+            lastPosition.copy(playerAircraft.position);
+
             // Attach camera to the player (adjust offset as needed)
             // camera.position.set(0, 3, -10); // Behind and slightly above
             // camera.position.set(0, 5, -20); // Further back (Z=-20) and slightly higher (Y=5)
@@ -2186,6 +2564,13 @@
             updateJetTrailParticles(deltaTime);
             checkCollisions();
 
+            // --- Addictive Game Mechanics Updates ---
+            updateCollectibles(deltaTime);
+            updateGameStats(deltaTime);
+            checkTricks();
+            checkNearMisses();
+            checkMissions();
+
             // Send player state periodically
             const now = Date.now();
             if (ws && ws.readyState === WebSocket.OPEN && playerId && now - lastUpdateTime > UPDATE_INTERVAL_MS) {
@@ -2198,7 +2583,7 @@
                 // Define camera offset relative to the aircraft (behind, above)
                 // Reversed Z direction to match our updated forward vector
                 const relativeCameraOffset = new THREE.Vector3(0, 2, 10); // Positive Z now to stay behind the aircraft
-                
+
                 // Calculate the desired world position of the camera
                 const cameraOffset = relativeCameraOffset.applyQuaternion(playerAircraft.quaternion);
                 const desiredCameraPosition = playerAircraft.position.clone().add(cameraOffset);
@@ -2215,6 +2600,209 @@
             // Use composer for post-processing instead of direct render
             composer.render();
             updateInfoPanel();
+        }
+
+        function updateCollectibles(deltaTime) {
+            if (!playerAircraft) return;
+
+            collectibles.forEach((collectible, index) => {
+                if (collectible.userData.collected) return;
+
+                // Rotate collectible
+                collectible.rotation.y += collectible.userData.rotationSpeed * deltaTime;
+
+                // Floating animation
+                const floatSpeed = 0.5;
+                collectible.userData.floatOffset += floatSpeed * deltaTime;
+                collectible.position.y += Math.sin(collectible.userData.floatOffset) * 0.5;
+
+                // Check for collection
+                const distance = playerAircraft.position.distanceTo(collectible.position);
+                if (distance < 15) {
+                    collectible.userData.collected = true;
+                    collectible.visible = false;
+
+                    // Update streak
+                    const now = Date.now();
+                    if (now - streak.lastCollectionTime < streak.streakTimeout) {
+                        streak.collectibles++;
+                    } else {
+                        streak.collectibles = 1;
+                    }
+                    streak.lastCollectionTime = now;
+
+                    // Calculate bonus based on streak
+                    const streakBonus = streak.collectibles > 1 ? streak.collectibles * 50 : 0;
+                    const totalPoints = COLLECTIBLE_VALUE + streakBonus;
+
+                    gameStats.collectiblesGathered++;
+                    if (streak.collectibles > 1) {
+                        addScore(totalPoints, `COLLECTED! ${streak.collectibles}x STREAK!`);
+                    } else {
+                        addScore(totalPoints, 'COLLECTED!');
+                    }
+
+                    // Create a burst effect
+                    createCollectionBurst(collectible.position);
+
+                    checkAchievement('collector', gameStats.collectiblesGathered >= 50, 'COLLECTOR: Gathered 50 collectibles!');
+                }
+            });
+        }
+
+        function createCollectionBurst(position) {
+            const particleCount = 20;
+            const particles = [];
+            const particleGeometry = new THREE.SphereGeometry(0.5, 4, 4);
+            const particleMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+
+            for (let i = 0; i < particleCount; i++) {
+                const particle = new THREE.Mesh(particleGeometry, particleMaterial.clone());
+                particle.position.copy(position);
+
+                const velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 50,
+                    (Math.random() - 0.5) * 50,
+                    (Math.random() - 0.5) * 50
+                );
+                particle.userData.velocity = velocity;
+                particle.userData.life = 1.0;
+
+                scene.add(particle);
+                particles.push(particle);
+            }
+
+            // Animate and remove particles
+            const animateParticles = () => {
+                let allDead = true;
+                particles.forEach(p => {
+                    if (p.userData.life > 0) {
+                        allDead = false;
+                        p.position.add(p.userData.velocity.clone().multiplyScalar(0.016));
+                        p.userData.life -= 0.02;
+                        p.material.opacity = p.userData.life;
+                        p.material.transparent = true;
+                    } else {
+                        scene.remove(p);
+                    }
+                });
+
+                if (!allDead) {
+                    requestAnimationFrame(animateParticles);
+                }
+            };
+            animateParticles();
+        }
+
+        function updateGameStats(deltaTime) {
+            if (!playerAircraft) return;
+
+            // Track flight time
+            gameStats.totalFlightTime += deltaTime;
+            checkAchievement('marathon', gameStats.totalFlightTime >= 600, 'MARATHON: Flew for 10 minutes!');
+
+            // Track distance
+            const distanceTraveled = playerAircraft.position.distanceTo(lastPosition);
+            gameStats.totalDistance += distanceTraveled / 1000; // Convert to km
+            lastPosition.copy(playerAircraft.position);
+            checkAchievement('explorer', gameStats.totalDistance >= 50, 'EXPLORER: Traveled 50km!');
+
+            // Track boost time
+            if (controls.boost) {
+                gameStats.boostTime += deltaTime;
+                checkAchievement('boostMaster', gameStats.boostTime >= 120, 'BOOST MASTER: Used boost for 2 minutes!');
+            }
+
+            // Track high altitude
+            if (playerAircraft.position.y > 1500) {
+                gameStats.highAltitudeTime += deltaTime;
+            }
+
+            // Award passive points for flying
+            const currentSpeed = playerVelocity.length();
+            if (currentSpeed > 100) {
+                // Base points for flying
+                let basePoints = deltaTime * 2;
+
+                // Bonus for high speed
+                if (currentSpeed > 400) {
+                    basePoints *= 2; // 2x for high speed
+                }
+
+                // Bonus for high altitude
+                if (playerAircraft.position.y > 1000) {
+                    basePoints *= 1.5; // 1.5x for high altitude
+                }
+
+                // Bonus for both high speed AND high altitude
+                if (currentSpeed > 400 && playerAircraft.position.y > 1000) {
+                    basePoints *= 1.5; // Additional 1.5x multiplier
+                }
+
+                addScore(basePoints, ''); // Silent scoring
+            }
+
+            // Speed achievements
+            const speedKmh = playerVelocity.length() * 3.6;
+            const maxSpeed = PLAYER_SPEED * AFTERBURNER_MULTIPLIER * 3.6;
+            if (speedKmh >= maxSpeed * 0.95) {
+                checkAchievement('speedDemon', true, 'SPEED DEMON: Reached max speed!');
+            }
+
+            // Altitude achievements
+            checkAchievement('skyHigh', playerAircraft.position.y >= 2000, 'SKY HIGH: Reached 2000m altitude!');
+        }
+
+        function checkTricks() {
+            if (!playerAircraft || !playerAngularVelocity) return;
+
+            const now = Date.now();
+            if (now - lastTrickTime < 1000) return; // Cooldown
+
+            const angularSpeed = playerAngularVelocity.length();
+            if (angularSpeed > TRICK_THRESHOLD && playerVelocity.length() > 200) {
+                // Performing a trick!
+                gameStats.tricksPerformed++;
+                addScore(50, 'TRICK!');
+                lastTrickTime = now;
+                checkAchievement('acrobat', gameStats.tricksPerformed >= 10, 'ACROBAT: Performed 10 tricks!');
+            }
+        }
+
+        function checkNearMisses() {
+            if (!playerAircraft) return;
+
+            const now = Date.now();
+            if (now - lastNearMissTime < 500) return; // Cooldown to prevent spam
+
+            const playerBox = new THREE.Box3().setFromObject(playerAircraft);
+            for (const buildingBox of buildingBoundingBoxes) {
+                if (!playerBox.intersectsBox(buildingBox)) {
+                    const playerCenter = new THREE.Vector3();
+                    playerBox.getCenter(playerCenter);
+                    const buildingCenter = new THREE.Vector3();
+                    buildingBox.getCenter(buildingCenter);
+
+                    const distance = playerCenter.distanceTo(buildingCenter);
+                    if (distance < NEAR_MISS_DISTANCE && playerVelocity.length() > 200) {
+                        gameStats.nearMisses++;
+                        addScore(25, 'NEAR MISS!');
+                        lastNearMissTime = now;
+                        checkAchievement('riskTaker', gameStats.nearMisses >= 50, 'RISK TAKER: 50 near misses!');
+                        break; // Only count one per frame
+                    }
+                }
+            }
+        }
+
+        function checkMissions() {
+            missions.forEach(mission => {
+                if (!mission.completed && mission.check()) {
+                    mission.completed = true;
+                    showNotification(`MISSION COMPLETE: ${mission.name}`);
+                    addScore(mission.reward, 'MISSION BONUS');
+                }
+            });
         }
 
         function updatePlayerMovement(deltaTime) {

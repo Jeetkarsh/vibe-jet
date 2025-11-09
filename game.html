@@ -151,7 +151,11 @@
         // import { OrbitControls } from 'three/addons/controls/OrbitControls.js'; // Optional for debugging
 
         // --- Configuration ---
-        const WEBSOCKET_URL = 'ws://localhost:8080'; // Adjust if your server is elsewhere
+        // Dynamic WebSocket URL - works locally and when deployed
+        // Port can be overridden via ?wsport=XXXX query parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const wsPort = urlParams.get('wsport') || '8080';
+        const WEBSOCKET_URL = `ws://${window.location.hostname}:${wsPort}`;
         const PLAYER_SPEED = 200.0; // Base speed units/sec
         const AFTERBURNER_MULTIPLIER = 3.0;
         const ROLL_SPEED = Math.PI * 1.0; // Radians per second
@@ -1491,9 +1495,9 @@
 
         function createGround() {
             const textureLoader = new THREE.TextureLoader();
-            const grassTextureUrl = 'https://threejs.org/examples/textures/terrain/grasslight-big.jpg'; // Example texture
-            // If CORS error: download this jpg, put it next to game.html, and use:
-            // const grassTextureUrl = 'grasslight-big.jpg';
+            // Try local texture first (download from: https://threejs.org/examples/textures/terrain/grasslight-big.jpg)
+            // If local file doesn't exist, will fall back to CDN, then to solid color
+            const grassTextureUrl = 'assets/grasslight-big.jpg';
 
             console.log("Loading ground texture...");
             textureLoader.load(
@@ -1556,14 +1560,58 @@
                 // --- Error Callback ---
                 (error) => {
                     console.error('Failed to load ground texture:', error);
-                    // Fallback: Create simple grey ground if texture fails
-                    const groundGeometry = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE);
-                    const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x555555, side: THREE.DoubleSide });
+                    console.warn("Using procedural fallback ground texture.");
+
+                    // Create a procedural grass texture using canvas
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 512;
+                    canvas.height = 512;
+                    const ctx = canvas.getContext('2d');
+
+                    // Create grass-like pattern
+                    for (let i = 0; i < canvas.width; i++) {
+                        for (let j = 0; j < canvas.height; j++) {
+                            const noise = Math.random() * 40 - 20;
+                            const r = 85 + noise;
+                            const g = 120 + noise;
+                            const b = 70 + noise;
+                            ctx.fillStyle = `rgb(${r},${g},${b})`;
+                            ctx.fillRect(i, j, 1, 1);
+                        }
+                    }
+
+                    const texture = new THREE.CanvasTexture(canvas);
+                    texture.wrapS = THREE.RepeatWrapping;
+                    texture.wrapT = THREE.RepeatWrapping;
+                    const repeats = GROUND_SIZE / 100;
+                    texture.repeat.set(repeats, repeats);
+
+                    // Create terrain with same hills as success case
+                    const groundGeometry = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, GROUND_SEGMENTS, GROUND_SEGMENTS);
+                    const positionAttribute = groundGeometry.attributes.position;
+                    const vertex = new THREE.Vector3();
+
+                    for (let i = 0; i < positionAttribute.count; i++) {
+                        vertex.fromBufferAttribute(positionAttribute, i);
+                        const height = getTerrainHeight(vertex.x, vertex.y);
+                        positionAttribute.setZ(i, height);
+                    }
+                    positionAttribute.needsUpdate = true;
+                    groundGeometry.computeVertexNormals();
+
+                    const groundMaterial = new THREE.MeshStandardMaterial({
+                        map: texture,
+                        color: 0x88aa66,
+                        side: THREE.FrontSide,
+                        roughness: 1.0,
+                        metalness: 0.0,
+                        envMapIntensity: 0.3
+                    });
+
                     const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
                     groundMesh.rotation.x = -Math.PI / 2;
                     groundMesh.receiveShadow = true;
                     scene.add(groundMesh);
-                    console.warn("Using fallback grey ground.");
                 }
             );
         }

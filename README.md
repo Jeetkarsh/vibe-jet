@@ -277,7 +277,290 @@ The results I've observed are comparable to those from Claude 3.7 Sonnet, my pre
 
 [Gemini 2.5 Pro vs. Claude 3.7 Sonnet: Coding Comparison](https://composio.dev/blog/gemini-2-5-pro-vs-claude-3-7-sonnet-coding-comparison/) (Mar 2025) - A good blog post, eval methods are quite rigorous and fair. A total of 4 realistic coding problems being tested, mainly on WebDev, animation and a tricky LeetCode question.
 
-## Setup for Development
+## 🚀 Quick Start Guide
+
+### Prerequisites
+
+- **Node.js** (v14 or higher) - [Download here](https://nodejs.org/)
+- **npm** (comes with Node.js)
+- A modern web browser with WebGL 2.0 support (Chrome, Firefox, Safari, or Edge)
+- At least 2GB of available RAM
+
+### Installation
+
+1. **Clone the repository:**
+
+```sh
+git clone https://github.com/cedrickchee/vibe-jet.git
+cd vibe-jet
+```
+
+2. **Install dependencies:**
+
+```sh
+npm install
+```
+
+This will install:
+- `ws` - WebSocket server library
+- `uuid` - For generating unique player IDs
+
+### Running the Game
+
+You need to run **two servers** simultaneously:
+
+**Terminal 1 - WebSocket Server (for multiplayer):**
+
+```sh
+npm start
+# or
+node server.js
+```
+
+You should see: `WebSocket server started on port 8080`
+
+**Terminal 2 - Web Server (for serving game files):**
+
+```sh
+npm run serve
+# or
+npx serve
+```
+
+This starts a local web server (usually on port 3000).
+
+**Open your browser:**
+
+Navigate to: `http://localhost:3000/game.html`
+
+### Alternative: Using Python's HTTP Server
+
+If you prefer Python:
+
+```sh
+# Terminal 1: Start WebSocket server
+npm start
+
+# Terminal 2: Start web server
+python3 -m http.server 3000
+# or for Python 2:
+python -m SimpleHTTPServer 3000
+```
+
+Then open: `http://localhost:3000/game.html`
+
+---
+
+## 🎮 Game Controls
+
+### Flight Controls
+
+| Key | Action |
+|-----|--------|
+| **W** | Pitch down (nose down) |
+| **S** | Pitch up (nose up) |
+| **A** | Yaw left |
+| **D** | Yaw right |
+| **Q** | Roll left |
+| **E** | Roll right |
+| **Space** | Afterburner (3x speed boost) |
+| **Shift** | Brake (reduce speed) |
+
+### Camera Controls
+
+| Key | Action |
+|-----|--------|
+| **Arrow Up** | Look up |
+| **Arrow Down** | Look down |
+| **Arrow Left** | Look left |
+| **Arrow Right** | Look right |
+| **R** | Reset camera to default position |
+| **1** | First-person view (cockpit) |
+| **2** | Third-person view (chase cam) |
+| **3** | Far chase camera |
+
+### Other Controls
+
+| Key | Action |
+|-----|--------|
+| **F** | Toggle fullscreen |
+| **L** | Toggle wireframe mode |
+
+---
+
+## 🔧 Configuration
+
+### Custom Port
+
+**WebSocket Server:**
+
+```sh
+PORT=9000 node server.js
+```
+
+**Then access the game with:**
+
+```
+http://localhost:3000/game.html?wsport=9000
+```
+
+### Game Settings
+
+You can modify game constants in `game.html` around line 159:
+
+```javascript
+const PLAYER_SPEED = 200.0;              // Base speed units/sec
+const AFTERBURNER_MULTIPLIER = 3.0;      // Speed multiplier
+const ROLL_SPEED = Math.PI * 1.0;        // Roll speed in radians/sec
+const PITCH_SPEED = Math.PI * 0.8;       // Pitch speed in radians/sec
+const YAW_SPEED = Math.PI * 0.5;         // Yaw speed in radians/sec
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### WebSocket Connection Failed
+
+**Issue:** "WebSocket connection failed" in browser console
+
+**Solutions:**
+1. Verify WebSocket server is running: `node server.js`
+2. Check the port matches (default is 8080)
+3. Look for error messages in the server terminal
+4. Try restarting both servers
+5. Check firewall settings
+
+### Game Shows Blank Screen
+
+**Solutions:**
+1. Check browser console (F12) for errors
+2. Ensure both servers are running (WebSocket + HTTP)
+3. Verify you're accessing `game.html`, not just the directory
+4. Try a different browser (Chrome recommended)
+5. Check WebGL support: Visit [https://get.webgl.org/](https://get.webgl.org/)
+
+### Ground Texture Missing or Grey
+
+**Note:** The game uses a procedural grass texture as fallback. This is expected behavior!
+
+For a better texture (optional):
+```sh
+curl -o assets/grasslight-big.jpg https://threejs.org/examples/textures/terrain/grasslight-big.jpg
+```
+
+### Port Already in Use
+
+**Issue:** `Error: listen EADDRINUSE: address already in use :::8080`
+
+**Solution:**
+
+```sh
+# Find and kill the process using port 8080
+# On Linux/Mac:
+lsof -ti:8080 | xargs kill -9
+
+# On Windows:
+netstat -ano | findstr :8080
+taskkill /PID <PID> /F
+
+# Or use a different port:
+PORT=9000 node server.js
+```
+
+### Performance Issues / Low FPS
+
+**Solutions:**
+1. Close other applications/browser tabs
+2. Reduce browser window size
+3. Update graphics drivers
+4. Check GPU usage in Task Manager
+5. Try a different browser
+
+---
+
+## 📁 Project Structure
+
+```
+vibe-jet/
+├── game.html              # Main game client (2,483 lines)
+├── server.js              # WebSocket multiplayer server
+├── package.json           # Node.js dependencies and scripts
+├── package-lock.json      # Dependency lock file
+├── README.md              # This file
+└── assets/
+    ├── shenyang_j-11.glb  # 3D model of jet fighter (7.7 MB)
+    ├── cloud10.png        # Cloud texture
+    ├── hollywood.ttf      # Font for UI
+    ├── road.jpg           # Road texture
+    └── Flamingo.glb       # Additional 3D model
+```
+
+---
+
+## 🌟 Recent Improvements
+
+This fork includes several improvements for better local development:
+
+1. **Dynamic WebSocket URL** - Automatically detects hostname (works locally and when deployed)
+2. **Procedural Ground Texture** - Beautiful fallback grass texture generated at runtime
+3. **Configurable Port** - Server port can be set via environment variable or URL parameter
+4. **Better Documentation** - Comprehensive setup and troubleshooting guide
+5. **Enhanced Scripts** - Added `npm run serve` and improved package.json
+
+---
+
+## 📊 Technical Details
+
+### Technologies Used
+
+- **Three.js r168** - 3D graphics library
+- **WebSocket (ws)** - Real-time communication
+- **Node.js** - Server runtime
+- **GLB/GLTF** - 3D model format
+- **Post-processing** - Bloom, motion blur, SMAA anti-aliasing
+
+### Browser Compatibility
+
+- Chrome/Edge 90+ ✅
+- Firefox 88+ ✅
+- Safari 14+ ✅
+- Opera 76+ ✅
+- Internet Explorer ❌ (not supported)
+
+### Network Requirements
+
+- **Latency:** < 100ms recommended for smooth multiplayer
+- **Bandwidth:** ~10-50 KB/s per client
+- **WebSocket:** Persistent connection required
+
+---
+
+## 📝 Development Notes
+
+### Testing Multiplayer Locally
+
+1. Start both servers as described above
+2. Open multiple browser windows/tabs
+3. Navigate each to `http://localhost:3000/game.html`
+4. Each window represents a different player
+5. You should see other players' jets moving in real-time
+
+### Code Structure
+
+**game.html** is organized into sections:
+- **Lines 1-150**: HTML structure, Three.js imports
+- **Lines 153-170**: Configuration constants
+- **Lines 200-500**: Three.js scene setup
+- **Lines 500-800**: Camera and rendering setup
+- **Lines 800-1200**: Player controls and physics
+- **Lines 1200-1500**: Environment (ground, sky, buildings)
+- **Lines 1500-2000**: Multiplayer networking
+- **Lines 2000-2500**: Game loop and updates
+
+---
+
+## Setup for Development (Original Instructions)
 
 Step 0:
 - Install Node.js (v18 and above)

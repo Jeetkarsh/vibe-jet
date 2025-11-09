@@ -1,12 +1,15 @@
 {
   "name": "vibe-jet",
   "version": "1.0.0",
-  "description": "",
+  "description": "A multiplayer 3D jet fighter game built with Three.js and WebSockets",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node server.js",
+    "serve": "npx serve",
+    "test": "echo \"No tests specified yet\" && exit 0"
   },
-  "keywords": [],
+  "keywords": ["game", "threejs", "websocket", "multiplayer", "3d"],
   "author": "Cedric Chee",
   "license": "MIT",
   "dependencies": {

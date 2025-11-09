@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 const { v4: uuidv4 } = require('uuid'); // For generating unique IDs
 
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
 const wss = new WebSocket.Server({ port: PORT });
 
 // Store connected clients and their latest known state

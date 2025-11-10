@@ -314,8 +314,8 @@
             rimLight.position.set(0, 500, -1000);
             scene.add(rimLight);
 
-            // Fog
-            scene.fog = new THREE.Fog(0xcccccc, 1000, 15000);
+            // Fog - Disabled for clearer visuals
+            // scene.fog = new THREE.Fog(0xcccccc, 1000, 15000);
 
             // Ground
             // const groundGeometry = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE);
@@ -2408,29 +2408,21 @@
         function setupControls() {
             document.addEventListener('keydown', (event) => {
                 switch(event.code) {
-                    case 'KeyW': case 'ArrowUp':    controls.forward = 1; break;
-                    case 'KeyS': case 'ArrowDown':  controls.backward = 1; break; // Optional: Brake/Reverse?
-                    case 'KeyA': case 'ArrowLeft':  controls.left = 1; break; // Yaw left
-                    case 'KeyD': case 'ArrowRight': controls.right = 1; break; // Yaw right
-                    case 'KeyQ':                    controls.rollLeft = 1; break; // Roll left
-                    case 'KeyE':                    controls.rollRight = 1; break; // Roll right
-                    case 'ShiftLeft': case 'ShiftRight': controls.boost = 1; break;
-                    case 'ControlLeft': case 'ControlRight': controls.down = 1; break; // Pitch down
-                    case 'Space':                   controls.up = 1; break;     // Pitch up
+                    case 'ArrowUp':    controls.up = 1; break;      // Pitch up
+                    case 'ArrowDown':  controls.down = 1; break;    // Pitch down
+                    case 'ArrowLeft':  controls.left = 1; break;    // Yaw left
+                    case 'ArrowRight': controls.right = 1; break;   // Yaw right
+                    case 'Space':      controls.boost = 1; break;   // Boost
                 }
             });
 
             document.addEventListener('keyup', (event) => {
                  switch(event.code) {
-                    case 'KeyW': case 'ArrowUp':    controls.forward = 0; break;
-                    case 'KeyS': case 'ArrowDown':  controls.backward = 0; break;
-                    case 'KeyA': case 'ArrowLeft':  controls.left = 0; break;
-                    case 'KeyD': case 'ArrowRight': controls.right = 0; break;
-                    case 'KeyQ':                    controls.rollLeft = 0; break;
-                    case 'KeyE':                    controls.rollRight = 0; break;
-                    case 'ShiftLeft': case 'ShiftRight': controls.boost = 0; break;
-                    case 'ControlLeft': case 'ControlRight': controls.down = 0; break;
-                    case 'Space':                   controls.up = 0; break;
+                    case 'ArrowUp':    controls.up = 0; break;
+                    case 'ArrowDown':  controls.down = 0; break;
+                    case 'ArrowLeft':  controls.left = 0; break;
+                    case 'ArrowRight': controls.right = 0; break;
+                    case 'Space':      controls.boost = 0; break;
                 }
             });
         }
@@ -3039,17 +3031,19 @@
                 skyLight.intensity = Math.max(0.2, sunY * 0.6); // Ambient light stronger during day
                 sunLight.color.setHSL(0.1, 1, Math.max(0.5, sunY)); // Yellowish sun
                 skyLight.color.setHSL(0.6, 0.6, Math.max(0.3, sunY * 0.7)); // Bluish sky
-                scene.fog.color.setHSL(0.6, 0.3, Math.max(0.6, sunY * 0.8)); // Lighter fog
-                scene.fog.near = 1000 + (1-sunY) * 2000; // Fog denser near horizon at dawn/dusk
-                scene.fog.far = 15000 - (1-sunY) * 5000;
+                // Fog disabled for clearer visuals
+                // scene.fog.color.setHSL(0.6, 0.3, Math.max(0.6, sunY * 0.8)); // Lighter fog
+                // scene.fog.near = 1000 + (1-sunY) * 2000; // Fog denser near horizon at dawn/dusk
+                // scene.fog.far = 15000 - (1-sunY) * 5000;
                 renderer.setClearColor(skyLight.color); // Match background to sky
             } else { // Nighttime
                 sunLight.intensity = 0; // Sun off
                 skyLight.intensity = 0.1 + Math.abs(sunY) * 0.1; // Dim ambient from moon/stars
                 skyLight.color.setHSL(0.6, 0.3, 0.1); // Dark blue night sky
-                scene.fog.color.setHSL(0.6, 0.1, 0.05); // Darker fog
-                scene.fog.near = 500;
-                scene.fog.far = 8000;
+                // Fog disabled for clearer visuals
+                // scene.fog.color.setHSL(0.6, 0.1, 0.05); // Darker fog
+                // scene.fog.near = 500;
+                // scene.fog.far = 8000;
                  renderer.setClearColor(0x000011); // Dark night background
             }
              // Moon (could be another light source or just affect ambient)

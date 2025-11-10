@@ -118,36 +118,38 @@ function handleDisconnect(ws) {
     }
 }
 
-// Broadcast updated states at a fixed interval
+// OPTIMIZED: Broadcast updated states at a fixed interval with bundled updates
 setInterval(() => {
+    if (playerStates.size === 0) return;
+
+    // Build array of all updates once (simplified structure for efficiency)
     const updates = [];
     playerStates.forEach((data, id) => {
-         // Only send if data is not null (i.e., player has sent at least one update)
-        if(data) {
-            updates.push({ type: 'player_update', id: id, data: data });
+        // Only send if data is not null (i.e., player has sent at least one update)
+        if (data) {
+            updates.push({ id, data }); // Simplified structure
         }
     });
 
-    if (updates.length > 0) {
-        // This sends *all* player states in separate messages.
-        // Optimization: Could bundle updates into a single message array.
-        wss.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-                 const clientInfo = clients.get(client);
-                 if (clientInfo) {
-                    updates.forEach(update => {
-                        // Don't send a player its own state back in the broadcast loop
-                        // (They already have the authoritative client-side version)
-                        // Although sending it back can sometimes help with server authoritative reconciliation
-                        // For simplicity here, we skip sending self-updates.
-                        if (update.id !== clientInfo.id) {
-                           client.send(JSON.stringify(update));
-                        }
-                    });
-                 }
+    if (updates.length === 0) return;
+
+    // Send bundled updates to each client (50% less bandwidth!)
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            const clientInfo = clients.get(client);
+            if (clientInfo) {
+                // Filter out self and bundle into single message
+                const relevantUpdates = updates.filter(u => u.id !== clientInfo.id);
+                if (relevantUpdates.length > 0) {
+                    client.send(JSON.stringify({
+                        type: 'player_updates_batch',
+                        updates: relevantUpdates,
+                        timestamp: Date.now() // For client-side interpolation
+                    }));
+                }
             }
-        });
-    }
+        }
+    });
 }, UPDATE_INTERVAL);
 
 

@@ -126,11 +126,22 @@
         ALTITUDE: <span id="altitude">0</span> m<br>
         PLAYERS: <span id="players-count">1</span>
     </div>
+    <div id="race-info" style="position: absolute; top: 20px; right: 20px; color: #00ffff; font-family: 'Orbitron', monospace; font-weight: 700; background: linear-gradient(135deg, rgba(0,20,40,0.85), rgba(0,40,80,0.85)); padding: 20px 25px; border-radius: 12px; border: 2px solid rgba(0,255,255,0.4); box-shadow: 0 0 30px rgba(0,255,255,0.3); backdrop-filter: blur(10px); font-size: 16px; line-height: 1.8; display: none;">
+        TIME: <span id="race-time" style="color: #ffaa00; font-weight: 900; text-shadow: 0 0 10px rgba(255,170,0,0.8);">0.00</span>s<br>
+        CHECKPOINT: <span id="checkpoint-progress" style="color: #00ff00; font-weight: 900;">0/10</span><br>
+        <span id="best-time-display" style="font-size: 14px; color: #888;">BEST: --</span>
+    </div>
+    <div id="race-controls" style="position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); text-align: center;">
+        <button id="start-race-btn" style="background: linear-gradient(135deg, #00ffff, #0099cc); color: #000; font-family: 'Orbitron', monospace; font-weight: 900; font-size: 18px; padding: 15px 40px; border: none; border-radius: 10px; cursor: pointer; box-shadow: 0 0 20px rgba(0,255,255,0.5); transition: all 0.3s;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">START RACE</button>
+    </div>
     <div id="crosshair"></div>
     <div id="speedbar">
         <div id="speedbar-fill" style="height: 0%;"></div>
     </div>
     <div id="boost-indicator">⚡ AFTERBURNER ⚡</div>
+    <div id="checkpoint-notification" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00ff00; font-family: 'Orbitron', monospace; font-weight: 900; font-size: 48px; text-shadow: 0 0 30px rgba(0,255,0,1); display: none; pointer-events: none; animation: pulse 0.5s;">
+        CHECKPOINT!
+    </div>
     <script type="importmap">
         {
             "imports": {
@@ -232,6 +243,18 @@
         let cameraShake = new THREE.Vector3(); // Camera shake offset
         let shakeIntensity = 0; // Current shake intensity
         let speedLinesPass = null; // Speed lines shader pass
+
+        // --- Gameplay Variables ---
+        let checkpoints = []; // Array of checkpoint rings
+        let currentCheckpoint = 0; // Index of next checkpoint to pass
+        let checkpointsPassed = 0; // Total checkpoints passed
+        let raceStartTime = 0; // Race timer start
+        let raceTime = 0; // Current race time
+        let bestTime = localStorage.getItem('vibejet_best_time') || null; // Best time from storage
+        let isRacing = false; // Racing mode active
+        let powerups = []; // Array of power-up objects
+        let playerShield = false; // Shield power-up active
+        let shieldEndTime = 0; // When shield expires
 
         // --- Initialization ---
         function init() {
@@ -575,6 +598,12 @@
             createRoads();
 
             createJetTrailParticles();
+
+            createCheckpoints();
+
+            createPowerups();
+
+            setupRaceControls();
 
             // --- Start Animation Loop ---
             animate(); // <-- START the loop HERE
@@ -1979,6 +2008,298 @@
             }
         }
 
+        function createCheckpoints() {
+            console.log("Creating checkpoint rings...");
+            const CHECKPOINT_COUNT = 10;
+            const RING_RADIUS = 50;
+            const RING_TUBE_RADIUS = 3;
+
+            // Create ring geometry (torus)
+            const ringGeometry = new THREE.TorusGeometry(RING_RADIUS, RING_TUBE_RADIUS, 16, 100);
+
+            for (let i = 0; i < CHECKPOINT_COUNT; i++) {
+                // Create glowing material for each ring
+                const isNextCheckpoint = i === 0;
+                const ringMaterial = new THREE.MeshStandardMaterial({
+                    color: isNextCheckpoint ? 0x00ff00 : 0x0088ff,
+                    emissive: isNextCheckpoint ? 0x00ff00 : 0x0088ff,
+                    emissiveIntensity: isNextCheckpoint ? 1.0 : 0.5,
+                    roughness: 0.3,
+                    metalness: 0.7,
+                    transparent: true,
+                    opacity: 0.8
+                });
+
+                const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+
+                // Position checkpoints in a course around the map
+                const angle = (i / CHECKPOINT_COUNT) * Math.PI * 2;
+                const radius = GROUND_SIZE * 0.35;
+                const x = Math.cos(angle) * radius;
+                const z = Math.sin(angle) * radius;
+                const y = getTerrainHeight(x, z) + 80 + (i % 3) * 30; // Vary height
+
+                ring.position.set(x, y, z);
+
+                // Rotate ring to face the next checkpoint
+                const nextAngle = ((i + 1) / CHECKPOINT_COUNT) * Math.PI * 2;
+                const lookAtAngle = nextAngle - angle;
+                ring.rotation.y = lookAtAngle;
+
+                scene.add(ring);
+
+                checkpoints.push({
+                    mesh: ring,
+                    position: new THREE.Vector3(x, y, z),
+                    passed: false,
+                    index: i
+                });
+            }
+
+            console.log(`Created ${CHECKPOINT_COUNT} checkpoint rings.`);
+        }
+
+        function createPowerups() {
+            console.log("Creating power-ups...");
+            const POWERUP_COUNT = 15;
+
+            for (let i = 0; i < POWERUP_COUNT; i++) {
+                // Alternate between speed boost and shield
+                const type = i % 2 === 0 ? 'speed' : 'shield';
+
+                // Create powerup geometry (rotating cube or sphere)
+                const geometry = type === 'speed' ?
+                    new THREE.OctahedronGeometry(8, 0) :
+                    new THREE.IcosahedronGeometry(8, 0);
+
+                const material = new THREE.MeshStandardMaterial({
+                    color: type === 'speed' ? 0xffaa00 : 0x00aaff,
+                    emissive: type === 'speed' ? 0xffaa00 : 0x00aaff,
+                    emissiveIntensity: 1.5,
+                    metalness: 0.8,
+                    roughness: 0.2
+                });
+
+                const powerup = new THREE.Mesh(geometry, material);
+
+                // Random position on terrain
+                const x = (Math.random() - 0.5) * GROUND_SIZE * 0.8;
+                const z = (Math.random() - 0.5) * GROUND_SIZE * 0.8;
+                const y = getTerrainHeight(x, z) + 15;
+
+                powerup.position.set(x, y, z);
+                scene.add(powerup);
+
+                powerups.push({
+                    mesh: powerup,
+                    type: type,
+                    position: new THREE.Vector3(x, y, z),
+                    active: true,
+                    rotationSpeed: 0.02
+                });
+            }
+
+            console.log(`Created ${POWERUP_COUNT} power-ups.`);
+        }
+
+        function setupRaceControls() {
+            const startBtn = document.getElementById('start-race-btn');
+            if (startBtn) {
+                startBtn.addEventListener('click', startRace);
+            }
+
+            // Update best time display
+            if (bestTime) {
+                const bestTimeDisplay = document.getElementById('best-time-display');
+                if (bestTimeDisplay) {
+                    bestTimeDisplay.textContent = `BEST: ${parseFloat(bestTime).toFixed(2)}s`;
+                }
+            }
+        }
+
+        function startRace() {
+            console.log("Starting race!");
+            isRacing = true;
+            currentCheckpoint = 0;
+            checkpointsPassed = 0;
+            raceStartTime = Date.now();
+
+            // Reset all checkpoints
+            checkpoints.forEach((cp, index) => {
+                cp.passed = false;
+                cp.mesh.material.color.setHex(index === 0 ? 0x00ff00 : 0x0088ff);
+                cp.mesh.material.emissive.setHex(index === 0 ? 0x00ff00 : 0x0088ff);
+                cp.mesh.material.emissiveIntensity = index === 0 ? 1.0 : 0.5;
+            });
+
+            // Show race info, hide start button
+            document.getElementById('race-info').style.display = 'block';
+            document.getElementById('race-controls').style.display = 'none';
+
+            // Update checkpoint progress
+            updateCheckpointUI();
+        }
+
+        function updateCheckpointUI() {
+            const progressElem = document.getElementById('checkpoint-progress');
+            if (progressElem) {
+                progressElem.textContent = `${checkpointsPassed}/${checkpoints.length}`;
+            }
+        }
+
+        function checkCheckpointCollision() {
+            if (!isRacing || !playerAircraft) return;
+
+            const currentCp = checkpoints[currentCheckpoint];
+            if (!currentCp || currentCp.passed) return;
+
+            // Check if player is passing through the ring
+            const distance = playerAircraft.position.distanceTo(currentCp.position);
+            const RING_RADIUS = 50;
+
+            if (distance < RING_RADIUS + 20) { // Add buffer for easier passing
+                // Check if we're roughly in the plane of the ring
+                const relativePos = playerAircraft.position.clone().sub(currentCp.position);
+                const ringNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(currentCp.mesh.quaternion);
+                const dotProduct = Math.abs(relativePos.dot(ringNormal));
+
+                if (dotProduct < 30) { // Within plane threshold
+                    passCheckpoint(currentCp);
+                }
+            }
+        }
+
+        function passCheckpoint(checkpoint) {
+            checkpoint.passed = true;
+            checkpointsPassed++;
+            currentCheckpoint++;
+
+            // Visual feedback
+            checkpoint.mesh.material.color.setHex(0x00ff00);
+            checkpoint.mesh.material.emissiveIntensity = 2.0;
+
+            // Show notification
+            const notification = document.getElementById('checkpoint-notification');
+            if (notification) {
+                notification.style.display = 'block';
+                setTimeout(() => {
+                    notification.style.display = 'none';
+                }, 500);
+            }
+
+            // Update next checkpoint appearance
+            if (currentCheckpoint < checkpoints.length) {
+                const nextCp = checkpoints[currentCheckpoint];
+                nextCp.mesh.material.color.setHex(0x00ff00);
+                nextCp.mesh.material.emissive.setHex(0x00ff00);
+                nextCp.mesh.material.emissiveIntensity = 1.0;
+            }
+
+            updateCheckpointUI();
+
+            // Check if race finished
+            if (checkpointsPassed >= checkpoints.length) {
+                finishRace();
+            }
+        }
+
+        function finishRace() {
+            isRacing = false;
+            const finalTime = raceTime;
+
+            console.log(`Race finished! Time: ${finalTime.toFixed(2)}s`);
+
+            // Check and save best time
+            if (!bestTime || finalTime < parseFloat(bestTime)) {
+                bestTime = finalTime.toFixed(2);
+                localStorage.setItem('vibejet_best_time', bestTime);
+
+                // Show new record notification
+                alert(`🏆 NEW RECORD! ${finalTime.toFixed(2)}s`);
+            } else {
+                alert(`Race complete! Time: ${finalTime.toFixed(2)}s\nBest: ${bestTime}s`);
+            }
+
+            // Show start button again
+            document.getElementById('race-controls').style.display = 'block';
+            document.getElementById('race-info').style.display = 'none';
+
+            // Update best time display
+            const bestTimeDisplay = document.getElementById('best-time-display');
+            if (bestTimeDisplay) {
+                bestTimeDisplay.textContent = `BEST: ${bestTime}s`;
+            }
+        }
+
+        function updatePowerups(deltaTime) {
+            powerups.forEach((powerup) => {
+                if (!powerup.active) return;
+
+                // Rotate powerup
+                powerup.mesh.rotation.x += powerup.rotationSpeed;
+                powerup.mesh.rotation.y += powerup.rotationSpeed * 1.5;
+
+                // Bob up and down
+                powerup.mesh.position.y = powerup.position.y + Math.sin(Date.now() * 0.002) * 5;
+
+                // Check collision with player
+                if (playerAircraft) {
+                    const distance = playerAircraft.position.distanceTo(powerup.position);
+                    if (distance < 20) {
+                        collectPowerup(powerup);
+                    }
+                }
+            });
+
+            // Update shield
+            if (playerShield && Date.now() > shieldEndTime) {
+                playerShield = false;
+                console.log("Shield expired");
+            }
+        }
+
+        function collectPowerup(powerup) {
+            powerup.active = false;
+            powerup.mesh.visible = false;
+
+            if (powerup.type === 'speed') {
+                // Speed boost for 3 seconds
+                const boostMultiplier = 1.5;
+                const originalSpeed = PLAYER_SPEED;
+                // Would need to modify PLAYER_SPEED temporarily
+                console.log("Speed boost activated!");
+
+                // Respawn after 30 seconds
+                setTimeout(() => {
+                    powerup.active = true;
+                    powerup.mesh.visible = true;
+                }, 30000);
+
+            } else if (powerup.type === 'shield') {
+                // Shield for 10 seconds
+                playerShield = true;
+                shieldEndTime = Date.now() + 10000;
+                console.log("Shield activated!");
+
+                // Respawn after 30 seconds
+                setTimeout(() => {
+                    powerup.active = true;
+                    powerup.mesh.visible = true;
+                }, 30000);
+            }
+        }
+
+        function updateRaceTimer() {
+            if (!isRacing) return;
+
+            raceTime = (Date.now() - raceStartTime) / 1000; // Convert to seconds
+
+            const raceTimeElem = document.getElementById('race-time');
+            if (raceTimeElem) {
+                raceTimeElem.textContent = raceTime.toFixed(2);
+            }
+        }
+
         function createRoads() {
             if (!roadTexture) {
                 console.warn("Road texture not loaded, skipping road creation.");
@@ -2445,6 +2766,9 @@
             updateJetTrailParticles(deltaTime);
             updateOtherPlayerTrails(deltaTime); // Update trails for other players
             checkCollisions();
+            checkCheckpointCollision(); // Check checkpoint passing
+            updatePowerups(deltaTime); // Animate and check powerup collection
+            updateRaceTimer(); // Update race timer display
             interpolateOtherPlayers(deltaTime); // Smooth multiplayer movement
 
             // Send player state periodically

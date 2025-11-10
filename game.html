@@ -132,6 +132,13 @@
         <span id="best-time-display" style="font-size: 14px; color: #888;">BEST: --</span>
     </div>
     <div id="race-controls" style="position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); text-align: center;">
+        <div id="control-instructions" style="background: rgba(0, 0, 0, 0.7); color: #00ffff; font-family: 'Orbitron', monospace; font-size: 16px; padding: 20px 30px; border-radius: 10px; margin-bottom: 20px; border: 2px solid #00ffff; box-shadow: 0 0 20px rgba(0,255,255,0.3);">
+            <div style="font-size: 20px; font-weight: 900; margin-bottom: 15px; color: #fff;">🎮 HOW TO PLAY 🎮</div>
+            <div style="margin-bottom: 8px;"><span style="color: #ffaa00;">←</span> LEFT ARROW - Turn Left</div>
+            <div style="margin-bottom: 8px;"><span style="color: #ffaa00;">→</span> RIGHT ARROW - Turn Right</div>
+            <div style="margin-bottom: 8px;"><span style="color: #ffaa00;">SPACE</span> - Boost/Afterburner</div>
+            <div style="font-size: 14px; color: #888; margin-top: 12px;">✈️ Your plane flies forward automatically!</div>
+        </div>
         <button id="start-race-btn" style="background: linear-gradient(135deg, #00ffff, #0099cc); color: #000; font-family: 'Orbitron', monospace; font-weight: 900; font-size: 18px; padding: 15px 40px; border: none; border-radius: 10px; cursor: pointer; box-shadow: 0 0 20px rgba(0,255,255,0.5); transition: all 0.3s;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">START RACE</button>
     </div>
     <div id="crosshair"></div>
@@ -198,7 +205,7 @@
         const FOLIAGE_HEIGHT = 20;
         const FOLIAGE_RADIUS = 8;
         // --- Cloud Constants ---
-        const CLOUD_COUNT = 200; // Number of cloud particles
+        const CLOUD_COUNT = 50; // Number of cloud particles (reduced for better visibility)
         const CLOUD_SIZE = 1000; // Base size of each cloud particle
         const CLOUD_ALTITUDE_MIN = 600; // Minimum height for clouds
         const CLOUD_ALTITUDE_MAX = 1200; // Maximum height for clouds
@@ -1862,7 +1869,7 @@
                         blending: THREE.NormalBlending, // More realistic blending
                         depthWrite: false,
                         transparent: true,
-                        opacity: 0.8, // More opaque for better visibility
+                        opacity: 0.5, // Reduced opacity for better visibility through clouds
                         sizeAttenuation: true,
                         color: 0xffffff, // Pure white for realistic clouds
                         fog: true // React to scene fog for depth
@@ -2406,25 +2413,27 @@
         }
 
         function setupControls() {
+            // Simplified controls - plane automatically flies forward
+            // Left/Right arrows turn the plane (easier to control)
+            // Space for boost
             document.addEventListener('keydown', (event) => {
                 switch(event.code) {
-                    case 'ArrowUp':    controls.up = 1; break;      // Pitch up
-                    case 'ArrowDown':  controls.down = 1; break;    // Pitch down
-                    case 'ArrowLeft':  controls.left = 1; break;    // Yaw left
-                    case 'ArrowRight': controls.right = 1; break;   // Yaw right
+                    case 'ArrowLeft':  controls.left = 1; break;    // Turn left
+                    case 'ArrowRight': controls.right = 1; break;   // Turn right
                     case 'Space':      controls.boost = 1; break;   // Boost
                 }
             });
 
             document.addEventListener('keyup', (event) => {
                  switch(event.code) {
-                    case 'ArrowUp':    controls.up = 0; break;
-                    case 'ArrowDown':  controls.down = 0; break;
                     case 'ArrowLeft':  controls.left = 0; break;
                     case 'ArrowRight': controls.right = 0; break;
                     case 'Space':      controls.boost = 0; break;
                 }
             });
+
+            // Auto-forward - plane always moves forward
+            controls.forward = 1;
         }
 
         function setupWebSocket() {

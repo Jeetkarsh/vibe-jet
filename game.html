@@ -256,6 +256,11 @@
         let playerShield = false; // Shield power-up active
         let shieldEndTime = 0; // When shield expires
 
+        // --- Combat Variables ---
+        let projectiles = []; // Array of active projectiles
+        let lastFireTime = 0; // Last projectile fire time
+        let fireRate = 200; // Milliseconds between shots
+
         // --- Initialization ---
         function init() {
             // Basic Setup
